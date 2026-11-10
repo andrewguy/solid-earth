@@ -1,6 +1,8 @@
 import { RotateCcw, Upload } from 'lucide-react'
 import { type ReactNode, useState } from 'react'
 
+import type { LayerId } from '@/core/layers'
+
 import { Button } from '@/ui/components/ui/button'
 import { Input } from '@/ui/components/ui/input'
 import { Label } from '@/ui/components/ui/label'
@@ -14,8 +16,10 @@ import {
 } from '@/ui/components/ui/select'
 import { Separator } from '@/ui/components/ui/separator'
 import { Switch } from '@/ui/components/ui/switch'
+import { useAppStore } from '@/ui/store'
 
-// Placeholder controls: local state only until the store lands (milestones 4+).
+// Edge length and the coastline/border toggles are live; the rest are placeholders until
+// their milestones land.
 
 const SHAPES = [
   { id: 'tetrahedron', label: 'Tetrahedron' },
@@ -26,15 +30,15 @@ const SHAPES = [
   { id: 'truncated-icosahedron', label: 'Truncated icosahedron' },
 ] as const
 
-const LAYERS = [
-  { id: 'coastlines', label: 'Coastlines', on: true },
-  { id: 'borders', label: 'Country borders', on: true },
-  { id: 'rivers', label: 'Rivers', on: false },
-  { id: 'lakes', label: 'Lakes', on: false },
-  { id: 'land', label: 'Land fill', on: false },
-  { id: 'ocean', label: 'Ocean fill', on: false },
-  { id: 'graticule', label: 'Graticule', on: true },
-] as const
+const LAYERS: readonly { id: LayerId; label: string; available: boolean }[] = [
+  { id: 'coastlines', label: 'Coastlines', available: true },
+  { id: 'borders', label: 'Country borders', available: true },
+  { id: 'rivers', label: 'Rivers', available: false },
+  { id: 'lakes', label: 'Lakes', available: false },
+  { id: 'land', label: 'Land fill', available: false },
+  { id: 'ocean', label: 'Ocean fill', available: false },
+  { id: 'graticule', label: 'Graticule', available: false },
+]
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -49,15 +53,20 @@ function NumberField({
   id,
   label,
   unit,
-  defaultValue,
+  value,
+  onCommit,
   step,
 }: {
   id: string
   label: string
   unit: string
-  defaultValue: number
+  value: number
+  /** Called with valid positive values as the user types; omit for a placeholder field. */
+  onCommit?: (value: number) => void
   step: number
 }) {
+  // Keep a draft so the field can be cleared or hold partial input while typing.
+  const [draft, setDraft] = useState(String(value))
   return (
     <div className="grid grid-cols-[1fr_6rem] items-center gap-2">
       <Label htmlFor={id}>{label}</Label>
@@ -65,10 +74,16 @@ function NumberField({
         <Input
           id={id}
           type="number"
-          defaultValue={defaultValue}
+          value={draft}
           step={step}
           min={0}
           className="pr-9"
+          onChange={(e) => {
+            setDraft(e.target.value)
+            const v = e.target.valueAsNumber
+            if (onCommit && Number.isFinite(v) && v > 0) onCommit(v)
+          }}
+          onBlur={() => setDraft(String(value))}
         />
         <span className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 text-xs text-muted-foreground">
           {unit}
@@ -79,9 +94,10 @@ function NumberField({
 }
 
 export function LeftPanel() {
-  const [layers, setLayers] = useState<Record<string, boolean>>(() =>
-    Object.fromEntries(LAYERS.map((l) => [l.id, l.on])),
-  )
+  const edgeLengthMm = useAppStore((s) => s.edgeLengthMm)
+  const setEdgeLengthMm = useAppStore((s) => s.setEdgeLengthMm)
+  const layerStyles = useAppStore((s) => s.layerStyles)
+  const setLayerEnabled = useAppStore((s) => s.setLayerEnabled)
   const [kerfEnabled, setKerfEnabled] = useState(false)
 
   return (
@@ -111,14 +127,21 @@ export function LeftPanel() {
           </Section>
 
           <Section title="Size & material">
-            <NumberField id="edge" label="Edge length" unit="mm" defaultValue={100} step={1} />
-            <NumberField id="thickness" label="Thickness" unit="mm" defaultValue={3} step={0.1} />
+            <NumberField
+              id="edge"
+              label="Edge length"
+              unit="mm"
+              value={edgeLengthMm}
+              onCommit={setEdgeLengthMm}
+              step={1}
+            />
+            <NumberField id="thickness" label="Thickness" unit="mm" value={3} step={0.1} />
             <div className="flex items-center justify-between">
               <Label htmlFor="kerf-on">Kerf compensation</Label>
               <Switch id="kerf-on" checked={kerfEnabled} onCheckedChange={setKerfEnabled} />
             </div>
             {kerfEnabled && (
-              <NumberField id="kerf" label="Kerf" unit="mm" defaultValue={0.15} step={0.01} />
+              <NumberField id="kerf" label="Kerf" unit="mm" value={0.15} step={0.01} />
             )}
           </Section>
 
@@ -144,8 +167,9 @@ export function LeftPanel() {
                   <Label htmlFor={`layer-${l.id}`}>{l.label}</Label>
                   <Switch
                     id={`layer-${l.id}`}
-                    checked={layers[l.id] ?? false}
-                    onCheckedChange={(on) => setLayers((prev) => ({ ...prev, [l.id]: on }))}
+                    disabled={!l.available}
+                    checked={l.available && layerStyles[l.id].enabled}
+                    onCheckedChange={(on) => setLayerEnabled(l.id, on)}
                   />
                 </li>
               ))}

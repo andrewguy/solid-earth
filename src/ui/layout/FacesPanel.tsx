@@ -3,11 +3,14 @@ import { Download } from 'lucide-react'
 import { Button } from '@/ui/components/ui/button'
 import { ScrollArea } from '@/ui/components/ui/scroll-area'
 import { Separator } from '@/ui/components/ui/separator'
+import { FACE_COUNT } from '@/ui/artwork'
+import { useAppStore } from '@/ui/store'
 
-// Placeholder grid: 20 icosahedron faces. Real previews arrive in milestone 4.
-const FACE_COUNT = 20
-
+// Face picker. Thumbnails and ZIP export arrive in milestone 4.
 export function FacesPanel() {
+  const selected = useAppStore((s) => s.selectedFace)
+  const selectFace = useAppStore((s) => s.selectFace)
+
   return (
     <aside className="flex min-h-0 flex-col border-l">
       <header className="flex items-center justify-between px-4 py-2">
@@ -20,11 +23,15 @@ export function FacesPanel() {
       <ScrollArea className="min-h-0 flex-1">
         <ul className="grid grid-cols-3 gap-2 p-4">
           {Array.from({ length: FACE_COUNT }, (_, i) => (
-            <li
-              key={i}
-              className="flex aspect-square items-center justify-center rounded-md border bg-muted/40 font-mono text-xs text-muted-foreground"
-            >
-              {String(i).padStart(2, '0')}
+            <li key={i}>
+              <Button
+                variant={i === selected ? 'default' : 'outline'}
+                className="aspect-square h-auto w-full font-mono text-xs"
+                aria-pressed={i === selected}
+                onClick={() => selectFace(i)}
+              >
+                {String(i).padStart(2, '0')}
+              </Button>
             </li>
           ))}
         </ul>
