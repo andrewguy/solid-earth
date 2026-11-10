@@ -1,12 +1,25 @@
 import { DEFAULT_SVG_OPTIONS, faceToSvg } from '@/core/export/svg'
-import { prepareLines } from '@/core/geo/lines'
+import { prepareLines, preparePolygons } from '@/core/geo/lines'
 import {
   type CountriesTopology,
+  type LakesTopology,
   type LandTopology,
+  type RiversTopology,
   borderLines,
   coastlineLines,
+  graticuleLines,
+  lakePolygons,
+  lakeShoreLines,
+  landPolygons,
+  riverLines,
 } from '@/core/geo/topojson'
-import type { LayerId, LayerStyle, LineLayerId } from '@/core/layers'
+import {
+  type FillLayerId,
+  type LayerId,
+  type LayerStyle,
+  type LineSourceId,
+  fillsNeeded,
+} from '@/core/layers'
 import {
   type FaceArtwork,
   type PreparedLine,
@@ -18,15 +31,22 @@ import {
 } from '@/core/pipeline'
 import { type PolyhedronFrames, buildFrames } from '@/core/polyhedron/faces'
 import type { PolyhedronDef } from '@/core/polyhedron/types'
-import type { Quat } from '@/core/quat'
+import { type Quat, rotate } from '@/core/quat'
 import type { Resolution } from '@/core/settings'
+import type { Vec2 } from '@/core/vec3'
 
 export interface MapSources {
   readonly land: LandTopology
   readonly countries: CountriesTopology
+  readonly lakes: LakesTopology
+  readonly rivers: RiversTopology
 }
 
-export type DataLoader = (resolution: Resolution) => Promise<MapSources>
+/**
+ * Loads raw TopoJSON. `detail` (0–1, 10m only) is passed through so loaders may simplify;
+ * the bundled loader does (see bundled-data.ts).
+ */
+export type DataLoader = (resolution: Resolution, detail: number) => Promise<MapSources>
 
 export interface ProjectRequest {
   /** `id` identifies the shape for caching; `def` must already be preprocessed. */
@@ -35,6 +55,11 @@ export interface ProjectRequest {
   readonly edgeLengthMm: number
   readonly rotation: Quat
   readonly layerStyles: Readonly<Record<LayerId, LayerStyle>>
+  readonly graticuleIntervalDeg: number
+  /** Kerf in mm applied to the cut path; 0 = off. */
+  readonly kerfMm?: number
+  /** Fraction of points kept at 1:10m (ignored at other resolutions). Default 1. */
+  readonly detail10m?: number
   /**
    * false for interactive previews (dragging): skip SVG serialisation and rounding, and only
    * return packed artwork for the 3D textures. Default true.
@@ -42,16 +67,20 @@ export interface ProjectRequest {
   readonly wantSvg?: boolean
 }
 
-/** A layer's polylines as flat typed arrays (transferable without copying). */
+/** Polylines or rings as flat typed arrays (transferable without copying). */
 export interface PackedLayer {
   /** x0, y0, x1, y1, … in mm, face frame (y up). */
   readonly coords: Float32Array
-  /** Point index where each polyline starts, plus a final entry = total points. */
+  /** Point index where each polyline/ring starts, plus a final entry = total points. */
   readonly starts: Uint32Array
 }
 
 export interface PackedFace {
-  readonly layers: Partial<Record<LineLayerId, PackedLayer>>
+  /** The panel's export rotation (radians); textures undo it to map onto the 3D face. */
+  readonly rotation: number
+  readonly lines: Partial<Record<LineSourceId, PackedLayer>>
+  /** Closed rings (implicitly closed). */
+  readonly fills: Partial<Record<FillLayerId, PackedLayer>>
 }
 
 export interface ProjectResult {
@@ -67,37 +96,78 @@ export interface ProjectResult {
 }
 
 /**
+ * Unit-vector line segments for the live GPU preview: xyz pairs (each segment = 2 vertices),
+ * unrotated. Sent once per resolution; the 3D view rotates and projects them in a shader.
+ */
+export interface LineSegments3D {
+  readonly lines: Partial<Record<LineSourceId, Float32Array>>
+}
+
+/**
  * The projection pipeline behind the worker boundary (plan §7.1). Kept free of worker APIs
  * so it can be unit-tested directly; `projector.worker.ts` only exposes it via comlink.
  *
- * Caches prepared map data per resolution, and the last artwork set, so layer-style changes
- * only re-serialise SVG.
+ * Caches prepared map data per resolution, graticules per interval, and the last artwork set,
+ * so layer-style changes that need no new fills only re-serialise SVG.
  */
 export class Projector {
-  private readonly prepared = new Map<Resolution, Promise<PreparedMap>>()
+  private readonly prepared = new Map<string, Promise<PreparedMap>>()
+  private readonly graticules = new Map<number, PreparedLine[]>()
   private frames: { id: string; frames: PolyhedronFrames } | null = null
   private lastArt: { key: string; arts: FaceArtwork[] } | null = null
-
   private readonly load: DataLoader
 
   constructor(load: DataLoader) {
     this.load = load
   }
 
-  private preparedMap(resolution: Resolution): Promise<PreparedMap> {
-    let p = this.prepared.get(resolution)
+  private preparedMap(resolution: Resolution, detail: number): Promise<PreparedMap> {
+    const key = resolution === '10m' ? `10m:${detail}` : resolution
+    let p = this.prepared.get(key)
     if (!p) {
-      p = this.load(resolution).then(({ land, countries }) =>
-        prepareMap({
-          coastlines: prepareLines(coastlineLines(land)),
-          borders: prepareLines(borderLines(countries)),
-        }),
+      // Keep one simplified 10m variant at a time; they are large.
+      if (resolution === '10m') {
+        for (const k of this.prepared.keys()) if (k.startsWith('10m:')) this.prepared.delete(k)
+      }
+      p = this.load(resolution, detail).then(({ land, countries, lakes, rivers }) =>
+        prepareMap(
+          {
+            coastlines: prepareLines(coastlineLines(land)),
+            borders: prepareLines(borderLines(countries)),
+            rivers: prepareLines(riverLines(rivers)),
+            lakeShores: prepareLines(lakeShoreLines(lakes)),
+          },
+          {
+            land: preparePolygons(landPolygons(land)),
+            lakes: preparePolygons(lakePolygons(lakes)),
+          },
+        ),
       )
       // Don't cache failures: allow a retry.
-      p.catch(() => this.prepared.delete(resolution))
-      this.prepared.set(resolution, p)
+      p.catch(() => this.prepared.delete(key))
+      this.prepared.set(key, p)
     }
     return p
+  }
+
+  private graticule(stepDeg: number): PreparedLine[] {
+    let g = this.graticules.get(stepDeg)
+    if (!g) {
+      const lines = prepareLines(graticuleLines(stepDeg), 0.5, { keepSeams: true })
+      g = prepareMap({ graticule: lines }).lines.graticule as PreparedLine[]
+      this.graticules.set(stepDeg, g)
+    }
+    return g
+  }
+
+  /** Prepared data for a resolution plus the graticule. */
+  private async mapFor(
+    resolution: Resolution,
+    graticuleDeg: number,
+    detail = 1,
+  ): Promise<PreparedMap> {
+    const base = await this.preparedMap(resolution, detail)
+    return { ...base, lines: { ...base.lines, graticule: this.graticule(graticuleDeg) } }
   }
 
   private framesFor({ id, def }: ProjectRequest['polyhedron']): PolyhedronFrames {
@@ -105,23 +175,23 @@ export class Projector {
     return this.frames.frames
   }
 
-  async lineSegments(resolution: Resolution): Promise<LineSegments3D> {
-    const map = await this.preparedMap(resolution)
-    const layers: Partial<Record<LineLayerId, Float32Array>> = {}
-    for (const [id, lines] of Object.entries(map.lines) as [LineLayerId, PreparedLine[]][]) {
-      const segments = lines.reduce((n, l) => n + Math.max(0, l.points.length - 1), 0)
+  async lineSegments(resolution: Resolution, graticuleDeg: number): Promise<LineSegments3D> {
+    const map = await this.mapFor(resolution, graticuleDeg)
+    const lines: Partial<Record<LineSourceId, Float32Array>> = {}
+    for (const [id, ls] of Object.entries(map.lines) as [LineSourceId, PreparedLine[]][]) {
+      const segments = ls.reduce((n, l) => n + Math.max(0, l.points.length - 1), 0)
       const out = new Float32Array(segments * 6)
       let k = 0
-      for (const { points } of lines) {
+      for (const { points } of ls) {
         for (let i = 0; i + 1 < points.length; i++) {
           out.set(points[i]!, k)
           out.set(points[i + 1]!, k + 3)
           k += 6
         }
       }
-      layers[id] = out
+      lines[id] = out
     }
-    return { layers }
+    return { lines }
   }
 
   async project(req: ProjectRequest): Promise<ProjectResult> {
@@ -129,21 +199,34 @@ export class Projector {
     const wantSvg = req.wantSvg ?? true
     const precisionMm = wantSvg ? 0.01 : null
     const mmPerUnit = req.edgeLengthMm / longestEdge(frames)
+    const fills = fillsNeeded(req.layerStyles)
+    const kerfMm = req.kerfMm ?? 0
+    const detail = req.resolution === '10m' ? (req.detail10m ?? 1) : 1
     const key = JSON.stringify([
       req.polyhedron.id,
       req.resolution,
       req.edgeLengthMm,
       req.rotation,
       precisionMm,
+      fills,
+      req.graticuleIntervalDeg,
+      kerfMm,
+      detail,
     ])
     let prepareMs = 0
     let projectMs = 0
     let arts = this.lastArt?.key === key ? this.lastArt.arts : null
     if (!arts) {
       const t0 = performance.now()
-      const map = await this.preparedMap(req.resolution)
+      const map = await this.mapFor(req.resolution, req.graticuleIntervalDeg, detail)
       const t1 = performance.now()
-      arts = buildAllFaces(frames, rotateMap(map, req.rotation), { mmPerUnit, precisionMm })
+      arts = buildAllFaces(frames, rotateMap(map, req.rotation), {
+        mmPerUnit,
+        precisionMm,
+        fills,
+        kerfMm,
+        north: rotate(req.rotation, [0, 0, 1]),
+      })
       projectMs = performance.now() - t1
       prepareMs = t1 - t0
       this.lastArt = { key, arts }
@@ -161,43 +244,41 @@ export class Projector {
   }
 }
 
-/**
- * Unit-vector line segments for the live GPU preview: xyz pairs (each segment = 2 vertices),
- * unrotated. Sent once per resolution; the 3D view rotates and projects them in a shader.
- */
-export interface LineSegments3D {
-  readonly layers: Partial<Record<LineLayerId, Float32Array>>
+function pack(polylines: readonly (readonly Vec2[])[]): PackedLayer {
+  const total = polylines.reduce((n, pl) => n + pl.length, 0)
+  const coords = new Float32Array(total * 2)
+  const starts = new Uint32Array(polylines.length + 1)
+  let k = 0
+  polylines.forEach((pl, i) => {
+    starts[i] = k
+    for (const [x, y] of pl) {
+      coords[2 * k] = x
+      coords[2 * k + 1] = y
+      k++
+    }
+  })
+  starts[polylines.length] = k
+  return { coords, starts }
 }
 
-/** Flatten a face's polylines into typed arrays. Always fresh: the buffers get transferred. */
+/** Flatten a face's artwork into typed arrays. Always fresh: the buffers get transferred. */
 export function packFace(art: FaceArtwork): PackedFace {
-  const layers: Partial<Record<LineLayerId, PackedLayer>> = {}
-  for (const [id, layer] of Object.entries(art.layers) as [
-    LineLayerId,
-    FaceArtwork['layers'][LineLayerId],
-  ][]) {
-    if (!layer) continue
-    const total = layer.polylines.reduce((n, pl) => n + pl.length, 0)
-    const coords = new Float32Array(total * 2)
-    const starts = new Uint32Array(layer.polylines.length + 1)
-    let k = 0
-    layer.polylines.forEach((pl, i) => {
-      starts[i] = k
-      for (const [x, y] of pl) {
-        coords[2 * k] = x
-        coords[2 * k + 1] = y
-        k++
-      }
-    })
-    starts[layer.polylines.length] = k
-    layers[id] = { coords, starts }
+  const lines: Partial<Record<LineSourceId, PackedLayer>> = {}
+  for (const [id, pls] of Object.entries(art.lines) as [LineSourceId, Vec2[][]][]) {
+    lines[id] = pack(pls)
   }
-  return { layers }
+  const fills: Partial<Record<FillLayerId, PackedLayer>> = {}
+  for (const [id, rings] of Object.entries(art.fills) as [FillLayerId, Vec2[][]][]) {
+    fills[id] = pack(rings)
+  }
+  return { rotation: art.rotation, lines, fills }
 }
 
 /** The ArrayBuffers inside a result, for zero-copy transfer out of the worker. */
 export function transferables(result: ProjectResult): ArrayBuffer[] {
   return result.faces.flatMap((f) =>
-    Object.values(f.layers).flatMap((l) => (l ? [l.coords.buffer, l.starts.buffer] : [])),
-  ) as ArrayBuffer[]
+    [...Object.values(f.lines), ...Object.values(f.fills)].flatMap((l) =>
+      l ? [l.coords.buffer as ArrayBuffer, l.starts.buffer as ArrayBuffer] : [],
+    ),
+  )
 }

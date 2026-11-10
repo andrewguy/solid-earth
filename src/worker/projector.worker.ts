@@ -19,11 +19,11 @@ export const api = {
     const result = await projector.project(req)
     return Comlink.transfer(result, transferables(result))
   },
-  async lineSegments(resolution: Resolution): Promise<LineSegments3D> {
-    const result = await projector.lineSegments(resolution)
+  async lineSegments(resolution: Resolution, graticuleDeg: number): Promise<LineSegments3D> {
+    const result = await projector.lineSegments(resolution, graticuleDeg)
     return Comlink.transfer(
       result,
-      Object.values(result.layers).map((a) => a.buffer as ArrayBuffer),
+      Object.values(result.lines).map((a) => a.buffer as ArrayBuffer),
     )
   },
 }

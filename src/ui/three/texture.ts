@@ -1,12 +1,22 @@
 import { CanvasTexture, SRGBColorSpace } from 'three'
 
-import type { LayerId, LayerStyle, LineLayerId } from '@/core/layers'
+import {
+  FILL_LAYERS,
+  FILL_SHORES,
+  type LayerId,
+  type LayerStyle,
+  LINE_LAYERS,
+  type LineSourceId,
+  fills,
+  strokes,
+} from '@/core/layers'
 import type { FaceFrame } from '@/core/polyhedron/faces'
-import type { PackedFace } from '@/worker/projector'
+import type { PackedFace, PackedLayer } from '@/worker/projector'
 
 /** Paper/plywood-ish panel colour for the preview. */
 export const PANEL_COLOR = '#f3ece0'
-const LINE_LAYERS: readonly LineLayerId[] = ['coastlines', 'borders']
+/** Fills are drawn translucent so the panel still reads as material, not paint. */
+const FILL_ALPHA = 0.45
 
 /** Face bounds in plane coordinates (model units), used for both UVs and canvas mapping. */
 export function faceBounds(face: FaceFrame) {
@@ -34,6 +44,7 @@ export function canvasSize(face: FaceFrame, maxPx: number): [number, number] {
  * Draw one face's artwork into a canvas whose extent is the face's bounding box (plan §6.6:
  * the texture shows exactly what gets exported). Canvas y is down; plane y is up.
  * UVs are (x − minX)/width, (y − minY)/height, which matches with CanvasTexture's flipY.
+ * Order matches the SVG: fills, then lines.
  */
 export function drawFaceTexture(
   ctx: CanvasRenderingContext2D,
@@ -52,25 +63,50 @@ export function drawFaceTexture(
   ctx.fillRect(0, 0, W, H)
   if (!packed) return
 
-  ctx.lineJoin = 'round'
-  ctx.lineCap = 'round'
-  ctx.lineWidth = Math.max(1, Math.max(W, H) / 500)
-  for (const id of LINE_LAYERS) {
-    const layer = packed.layers[id]
-    if (!layer || !styles[id].enabled) continue
-    const { coords, starts } = layer
-    ctx.strokeStyle = styles[id].color
+  // Artwork is in the panel's export orientation (e.g. north-up); undo that rotation and the
+  // mm scale to get back to the face frame the texture is laid out in.
+  const c = Math.cos(packed.rotation) / mmPerUnit
+  const s = Math.sin(packed.rotation) / mmPerUnit
+  const trace = ({ coords, starts }: PackedLayer, closed: boolean) => {
     ctx.beginPath()
     for (let i = 0; i + 1 < starts.length; i++) {
       for (let k = starts[i]!; k < starts[i + 1]!; k++) {
-        const x = (coords[2 * k]! / mmPerUnit - minX) * sx
-        const y = H - (coords[2 * k + 1]! / mmPerUnit - minY) * sy
+        const ox = coords[2 * k]!
+        const oy = coords[2 * k + 1]!
+        const x = (c * ox + s * oy - minX) * sx
+        const y = H - (-s * ox + c * oy - minY) * sy
         if (k === starts[i]) ctx.moveTo(x, y)
         else ctx.lineTo(x, y)
       }
+      if (closed) ctx.closePath()
     }
+  }
+  const baseWidth = Math.max(1, Math.max(W, H) / 500)
+  const stroke = (source: LineSourceId, style: LayerStyle) => {
+    const layer = packed.lines[source]
+    if (!layer) return
+    trace(layer, false)
+    ctx.strokeStyle = style.color
+    ctx.lineWidth = baseWidth * style.previewWidth
     ctx.stroke()
   }
+
+  ctx.lineJoin = 'round'
+  ctx.lineCap = 'round'
+  for (const id of FILL_LAYERS) {
+    const style = styles[id]
+    if (!style.enabled) continue
+    const rings = packed.fills[id]
+    if (fills(style) && rings) {
+      trace(rings, true)
+      ctx.globalAlpha = FILL_ALPHA
+      ctx.fillStyle = style.color
+      ctx.fill('evenodd')
+      ctx.globalAlpha = 1
+    }
+    if (strokes(style)) stroke(FILL_SHORES[id], style)
+  }
+  for (const id of LINE_LAYERS) if (styles[id].enabled) stroke(id, styles[id])
 }
 
 /**

@@ -11,7 +11,7 @@ import {
   Vector4,
 } from 'three'
 
-import type { LayerId, LayerStyle, LineLayerId } from '@/core/layers'
+import type { LayerId, LayerStyle, LineSourceId } from '@/core/layers'
 import type { PolyhedronFrames } from '@/core/polyhedron/faces'
 import type { Quat } from '@/core/quat'
 import type { Resolution } from '@/core/settings'
@@ -20,7 +20,30 @@ import { projector } from '@/ui/projector-client'
 import { useAppStore } from '@/ui/store'
 import type { LineSegments3D } from '@/worker/projector'
 
-const LINE_LAYERS: readonly LineLayerId[] = ['coastlines', 'borders']
+const SOURCES: readonly LineSourceId[] = [
+  'graticule',
+  'rivers',
+  'lakeShores',
+  'borders',
+  'coastlines',
+]
+
+/**
+ * Which style a live line source is drawn with, if any. Fills can't be drawn live, so while
+ * dragging a filled layer shows its shoreline instead (in its colour) to keep the map readable.
+ */
+function liveStyle(
+  source: LineSourceId,
+  styles: Readonly<Record<LayerId, LayerStyle>>,
+): LayerStyle | null {
+  if (source === 'lakeShores') return styles.lakes.enabled ? styles.lakes : null
+  if (styles[source].enabled) return styles[source]
+  if (source === 'coastlines') {
+    if (styles.land.enabled) return styles.land
+    if (styles.ocean.enabled) return styles.ocean
+  }
+  return null
+}
 
 /**
  * Same projection as the export, done per vertex on the GPU: rotate the unit vector by the
@@ -76,26 +99,25 @@ class SharedUniforms {
   }
 }
 
-/** Fetch (once per resolution) the unit-vector segments from the worker. */
-const segmentCache = new Map<Resolution, Promise<LineSegments3D>>()
-function useSegments(resolution: Resolution): LineSegments3D | null {
-  const [loaded, setLoaded] = useState<{ resolution: Resolution; data: LineSegments3D } | null>(
-    null,
-  )
+/** Fetch (once per resolution + graticule interval) the unit-vector segments from the worker. */
+const segmentCache = new Map<string, Promise<LineSegments3D>>()
+function useSegments(resolution: Resolution, graticuleDeg: number): LineSegments3D | null {
+  const key = `${resolution}:${graticuleDeg}`
+  const [loaded, setLoaded] = useState<{ key: string; data: LineSegments3D } | null>(null)
   useEffect(() => {
     let cancelled = false
-    let p = segmentCache.get(resolution)
+    let p = segmentCache.get(key)
     if (!p) {
-      p = projector().lineSegments(resolution)
-      p.catch(() => segmentCache.delete(resolution))
-      segmentCache.set(resolution, p)
+      p = projector().lineSegments(resolution, graticuleDeg)
+      p.catch(() => segmentCache.delete(key))
+      segmentCache.set(key, p)
     }
-    p.then((data) => !cancelled && setLoaded({ resolution, data })).catch(() => {})
+    p.then((data) => !cancelled && setLoaded({ key, data })).catch(() => {})
     return () => {
       cancelled = true
     }
-  }, [resolution])
-  return loaded?.resolution === resolution ? loaded.data : null
+  }, [key, resolution, graticuleDeg])
+  return loaded?.key === key ? loaded.data : null
 }
 
 /**
@@ -112,8 +134,10 @@ export function LiveLines({
   visible: boolean
 }) {
   const invalidate = useThree((s) => s.invalidate)
-  const resolution = useAppStore((s) => s.resolution)
-  const segments = useSegments(resolution)
+  // 1:10m is far too heavy for a drag preview; 1:50m is visually identical at that point.
+  const resolution = useAppStore((s) => (s.resolution === '10m' ? '50m' : s.resolution))
+  const graticuleDeg = useAppStore((s) => s.graticuleIntervalDeg)
+  const segments = useSegments(resolution, graticuleDeg)
 
   const [shared] = useState(() => new SharedUniforms())
 
@@ -137,8 +161,8 @@ export function LiveLines({
 
   const layers = useMemo(() => {
     if (!segments) return []
-    return LINE_LAYERS.flatMap((id) => {
-      const positions = segments.layers[id]
+    return SOURCES.flatMap((id) => {
+      const positions = segments.lines[id]
       if (!positions) return []
       const geometry = new BufferGeometry()
       geometry.setAttribute('position', new Float32BufferAttribute(positions, 3))
@@ -163,7 +187,10 @@ export function LiveLines({
 
   // Layer colours.
   useEffect(() => {
-    for (const l of layers) (l.material.uniforms.uColor!.value as Color).set(styles[l.id].color)
+    for (const l of layers) {
+      const style = liveStyle(l.id, styles)
+      if (style) (l.material.uniforms.uColor!.value as Color).set(style.color)
+    }
     invalidate()
   }, [layers, styles, invalidate])
 
@@ -175,7 +202,7 @@ export function LiveLines({
           key={l.id}
           geometry={l.geometry}
           material={l.material}
-          visible={visible && styles[l.id].enabled}
+          visible={visible && liveStyle(l.id, styles) !== null}
           frustumCulled={false}
         />
       ))}

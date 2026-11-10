@@ -1,7 +1,47 @@
 # Polyhedral Map Projector
 
-Project world-map vector data onto the faces of a polyhedron and export one laser-ready SVG per
-face. See [plan.md](plan.md) for scope, design and milestones.
+Turn a world map into laser-cut panels that assemble into a polyhedral globe.
+
+Pick a solid (icosahedron, truncated icosahedron "soccer ball", cube, … or your own convex
+shape), spin the globe underneath it, and export **one SVG per face** at real size in
+millimetres, with separate LightBurn layers for cutting, engraving and scoring.
+
+Each face uses a gnomonic projection from the centre of the solid, which maps great circles to
+straight lines. Coastlines, borders and the graticule therefore continue exactly across every
+edge when the panels are assembled.
+
+**For makers:** see the [maker guide](docs/MAKING.md) for choosing a shape and size, LightBurn
+settings, kerf, and assembly.
+
+## Features (Release 1)
+
+- **Shapes:** tetrahedron, cube, octahedron, dodecahedron, icosahedron, truncated icosahedron,
+  plus import of any convex polyhedron from **OBJ** or **JSON** (triangulated meshes are merged
+  back into flat faces).
+- **Map layers:** coastlines, country borders, rivers, lakes, land and ocean fills, graticule.
+  Each layer has its own on/off switch, mode (fill, shore line or both) and LightBurn colour.
+- **Data:** Natural Earth at 1:110m, 1:50m (bundled) and 1:10m (on demand, with a detail
+  control).
+- **3D preview:** drag to rotate the globe under the solid; panels are textured with exactly what
+  gets exported.
+- **Laser-ready SVGs:** true mm scale, north-up panels, Inkscape layers, exact LightBurn palette
+  colours, optional kerf compensation on the cut path only.
+- **Panel info:** dihedral angles, V-gap angles and inner gap widths for butt joints.
+- **Export:** per-face SVG, or a ZIP of all faces plus `project.json`.
+- **Projects:** autosaved in the browser; open/save project files.
+
+Everything runs in the browser. There is no server and nothing is uploaded.
+
+### Default LightBurn layers
+
+| Output                                       | LightBurn layer | Colour    |
+| -------------------------------------------- | --------------- | --------- |
+| Cut (panel outline)                          | 02              | `#FF0000` |
+| Engraved lines (coastlines, borders, rivers) | 00              | `#000000` |
+| Engraved fills (land, lakes, ocean)          | 01              | `#0000FF` |
+| Score (graticule)                            | 03              | `#00E000` |
+
+All colours can be changed per layer from LightBurn's palette.
 
 ## Development
 
@@ -14,8 +54,27 @@ npm test             # Vitest (FC_NUM_RUNS=5000 npm test for thorough property r
 npm run typecheck    # tsc -b
 npm run lint         # ESLint
 npm run build        # typecheck + production build
-npm run build:data   # regenerate src/data/ (see below)
+npm run build:data   # regenerate map data (see below)
 ```
+
+### Project layout
+
+```
+src/core/     pure TypeScript geometry pipeline (no DOM; runs in the worker; fully tested)
+  polyhedron/   presets, OBJ/JSON import, preprocessing and validation
+  geo/          TopoJSON extraction, seams, densifying, lon/lat ↔ vectors, rotation
+  clip/         clipping on the sphere (polylines, polygons) and culling
+  project/      gnomonic projection, north-up orientation
+  planar/       Clipper2 wrapper: unions, differences, kerf offset, rounding
+  export/       SVG, ZIP, project files
+  pipeline.ts   rotate → clip → project → per-face artwork
+src/worker/   the pipeline behind a web worker (comlink), data loading
+src/ui/       React app: zustand store, react-three-fiber preview, panels
+scripts/      build-data.ts
+tests/        Vitest unit tests and fast-check property tests
+```
+
+`plan.md` holds the full design: algorithm, decisions and acceptance criteria.
 
 ## Map data
 
@@ -26,10 +85,20 @@ npm run build:data   # regenerate src/data/ (see below)
 - `lakes-*.topo.json`, `rivers-*.topo.json`: Natural Earth GeoJSON at a pinned tag, downloaded
   (cached in `.cache/`), ring winding normalised to the d3 convention, and converted to TopoJSON.
 
+1:110m and 1:50m are bundled. 1:10m is large, so it is written to `public/data/` instead and
+served as static files that the app fetches only when you pick 1:10m. `public/data/` is not
+committed: run `npm run build:data` once (it downloads Natural Earth 10m lakes and rivers) or the
+1:10m option will report that the data is missing.
+
 `npm run build:data -- --skip-natural-earth` rebuilds only the world-atlas files (no network).
 
-Natural Earth data is public domain.
+Borders follow Natural Earth's default point of view; disputed areas are shown as Natural Earth
+draws them.
 
-## License
+## Licences
 
-MIT
+- Code: MIT.
+- Map data: [Natural Earth](https://www.naturalearthdata.com/), public domain; packaged by
+  world-atlas (ISC).
+- Libraries: d3 and topojson (ISC), three.js (MIT), Clipper2 TypeScript port (Boost Software
+  License 1.0), and others listed in `package.json`.

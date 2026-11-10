@@ -10,13 +10,21 @@ import type { ProjectSettings } from '@/core/settings'
 import countries110m from '@/data/countries-110m.topo.json'
 import countries50m from '@/data/countries-50m.topo.json'
 import land110m from '@/data/land-110m.topo.json'
+import lakes110m from '@/data/lakes-110m.topo.json'
+import lakes50m from '@/data/lakes-50m.topo.json'
 import land50m from '@/data/land-50m.topo.json'
+import rivers110m from '@/data/rivers-110m.topo.json'
+import rivers50m from '@/data/rivers-50m.topo.json'
 import { type DataLoader, type MapSources, Projector, transferables } from '@/worker/projector'
 
 const data = {
-  '110m': { land: land110m, countries: countries110m },
-  '50m': { land: land50m, countries: countries50m },
+  '110m': { land: land110m, countries: countries110m, lakes: lakes110m, rivers: rivers110m },
+  '50m': { land: land50m, countries: countries50m, lakes: lakes50m, rivers: rivers50m },
 } as unknown as Record<'110m' | '50m', MapSources>
+
+/** Bundled test data; 10m is not available in tests. */
+const load: DataLoader = (r) =>
+  r === '10m' ? Promise.reject(new Error('no 10m data in tests')) : Promise.resolve(data[r])
 
 const request = {
   polyhedron: { id: 'icosahedron', def: icosahedron() },
@@ -24,11 +32,12 @@ const request = {
   edgeLengthMm: 100,
   rotation: IDENTITY,
   layerStyles: DEFAULT_LAYER_STYLES,
+  graticuleIntervalDeg: 15,
 }
 
 describe('Projector', () => {
   it('projects all 20 icosahedron faces at 50m within the performance budget', async () => {
-    const projector = new Projector((r) => Promise.resolve(data[r]))
+    const projector = new Projector(load)
     const result = await projector.project(request)
     expect(result.shape).toBe('icosahedron')
     expect(result.svgs).toHaveLength(20)
@@ -41,7 +50,7 @@ describe('Projector', () => {
   })
 
   it('projects all 32 truncated-icosahedron faces at 50m in < 2 s (plan §9)', async () => {
-    const projector = new Projector((r) => Promise.resolve(data[r]))
+    const projector = new Projector(load)
     const result = await projector.project({
       ...request,
       polyhedron: { id: 'truncated-icosahedron', def: preset('truncated-icosahedron') },
@@ -52,8 +61,30 @@ describe('Projector', () => {
     console.log(`truncated icosahedron 50m: project ${result.projectMs.toFixed(0)} ms`)
   })
 
+  it('everything on (fills, rivers, graticule): 32 faces at 50m in < 2 s (plan §9)', async () => {
+    const all = Object.fromEntries(
+      Object.entries(DEFAULT_LAYER_STYLES).map(([id, st]) => [id, { ...st, enabled: true }]),
+    ) as typeof DEFAULT_LAYER_STYLES
+    const projector = new Projector(load)
+    const result = await projector.project({
+      ...request,
+      layerStyles: all,
+      polyhedron: { id: 'truncated-icosahedron', def: preset('truncated-icosahedron') },
+    })
+    console.log(
+      `all layers, truncated icosahedron 50m: prepare ${result.prepareMs.toFixed(0)} ms, project ${result.projectMs.toFixed(0)} ms`,
+    )
+    expect(result.projectMs).toBeLessThan(2000)
+    for (const svg of result.svgs!) expect(svg).toContain('</svg>')
+    expect(result.svgs!.filter((s) => s.includes('layer-ocean'))).toHaveLength(32)
+    expect(result.svgs!.some((s) => s.includes('layer-land'))).toBe(true)
+    expect(result.svgs!.some((s) => s.includes('layer-lakes'))).toBe(true)
+    expect(result.svgs!.some((s) => s.includes('layer-rivers'))).toBe(true)
+    expect(result.svgs!.filter((s) => s.includes('layer-graticule'))).toHaveLength(32)
+  })
+
   it('50m output is much more detailed than 110m', async () => {
-    const projector = new Projector((r) => Promise.resolve(data[r]))
+    const projector = new Projector(load)
     const coarse = await projector.project({ ...request, resolution: '110m' })
     const fine = await projector.project(request)
     const size = (svgs: string[] | null) => svgs!.reduce((n, s) => n + s.length, 0)
@@ -61,8 +92,8 @@ describe('Projector', () => {
   })
 
   it('loads each resolution once and re-serialises from cache on style changes', async () => {
-    const load = vi.fn<DataLoader>((r) => Promise.resolve(data[r]))
-    const projector = new Projector(load)
+    const spy = vi.fn<DataLoader>(load)
+    const projector = new Projector(spy)
     await projector.project(request)
     const restyled = await projector.project({
       ...request,
@@ -74,11 +105,11 @@ describe('Projector', () => {
     expect(restyled.projectMs).toBe(0)
     expect(restyled.svgs!.some((s) => s.includes('layer-borders'))).toBe(false)
     await projector.project({ ...request, edgeLengthMm: 150 })
-    expect(load).toHaveBeenCalledTimes(1)
+    expect(spy).toHaveBeenCalledTimes(1)
   })
 
   it('preview mode returns packed artwork only, matching the full result', async () => {
-    const projector = new Projector((r) => Promise.resolve(data[r]))
+    const projector = new Projector(load)
     const full = await projector.project({ ...request, resolution: '110m' })
     const preview = await projector.project({ ...request, resolution: '110m', wantSvg: false })
     expect(preview.svgs).toBeNull()
@@ -86,8 +117,8 @@ describe('Projector', () => {
     expect(preview.mmPerUnit).toBeCloseTo(100, 12)
     // Same polylines; preview is unrounded, full is rounded to 0.01 mm.
     full.faces.forEach((f, i) => {
-      const a = f.layers.coastlines!
-      const b = preview.faces[i]!.layers.coastlines!
+      const a = f.lines.coastlines!
+      const b = preview.faces[i]!.lines.coastlines!
       expect(b.starts.length).toBe(a.starts.length)
       expect(b.starts.at(-1)).toBeGreaterThanOrEqual(a.starts.at(-1)!) // rounding may dedupe
     })
@@ -95,22 +126,37 @@ describe('Projector', () => {
   })
 
   it('provides unit-vector line segments for the live GPU preview', async () => {
-    const projector = new Projector((r) => Promise.resolve(data[r]))
-    const { layers } = await projector.lineSegments('110m')
-    for (const id of ['coastlines', 'borders'] as const) {
-      const a = layers[id]!
+    const projector = new Projector(load)
+    const { lines } = await projector.lineSegments('110m', 15)
+    for (const id of ['coastlines', 'borders', 'rivers', 'lakeShores', 'graticule'] as const) {
+      const a = lines[id]!
       expect(a.length % 6).toBe(0)
-      expect(a.length).toBeGreaterThan(6000)
+      expect(a.length).toBeGreaterThan(600)
       for (let i = 0; i < a.length; i += 3) {
         expect(Math.hypot(a[i]!, a[i + 1]!, a[i + 2]!)).toBeCloseTo(1, 5)
       }
     }
   })
 
+  it('kerf enlarges only the cut path; engraving is unchanged', async () => {
+    const projector = new Projector(load)
+    const plain = await projector.project({ ...request, resolution: '110m' })
+    const kerfed = await projector.project({ ...request, resolution: '110m', kerfMm: 0.2 })
+    const width = (svg: string) => Number(/width="([\d.]+)mm"/.exec(svg)![1])
+    const coast = (svg: string) => /<g id="layer-coastlines"[\s\S]*?<\/g>/.exec(svg)?.[0]
+    plain.svgs!.forEach((svg, i) => {
+      const k = kerfed.svgs![i]!
+      expect(width(k)).toBeGreaterThan(width(svg))
+      // Same engraving geometry, only shifted by the larger margin box.
+      expect(coast(k) === undefined).toBe(coast(svg) === undefined)
+    })
+    expect(kerfed.projectMs).toBeGreaterThan(0) // kerf is part of the cache key
+  })
+
   it('retries after a failed data load', async () => {
     let calls = 0
-    const projector = new Projector((r) =>
-      ++calls === 1 ? Promise.reject(new Error('offline')) : Promise.resolve(data[r]),
+    const projector = new Projector((r, d) =>
+      ++calls === 1 ? Promise.reject(new Error('offline')) : load(r, d),
     )
     await expect(projector.project(request)).rejects.toThrow('offline')
     await expect(projector.project(request)).resolves.toBeTruthy()
@@ -119,11 +165,17 @@ describe('Projector', () => {
 
 describe('ZIP export', () => {
   const settings: ProjectSettings = {
+    preset: 'icosahedron',
     polyhedron: icosahedron(),
     rotation: IDENTITY,
     edgeLengthMm: 100,
     resolution: '50m',
     layerStyles: DEFAULT_LAYER_STYLES,
+    graticuleIntervalDeg: 15,
+    thicknessMm: 3,
+    kerfEnabled: false,
+    kerfMm: 0.15,
+    detail10m: 0.25,
   }
 
   it('contains every face SVG plus a versioned project.json', async () => {

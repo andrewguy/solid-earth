@@ -1,10 +1,10 @@
 import { create } from 'zustand'
 
-import { DEFAULT_LAYER_STYLES, type LayerId, type LayerStyle } from '@/core/layers'
-import { type PresetId, preset } from '@/core/polyhedron/presets'
+import type { LayerId, LayerStyle } from '@/core/layers'
+import { type PresetId, isPresetId, preset } from '@/core/polyhedron/presets'
 import type { PolyhedronDef } from '@/core/polyhedron/types'
 import { IDENTITY, type Quat } from '@/core/quat'
-import type { ProjectSettings, Resolution } from '@/core/settings'
+import { DEFAULT_SETTINGS, type ProjectSettings, type Resolution } from '@/core/settings'
 import type { PackedFace } from '@/worker/projector'
 
 export interface FaceOutput {
@@ -36,6 +36,27 @@ export interface ShapeChoice {
 }
 
 let customCounter = 0
+const customChoice = (def: PolyhedronDef): ShapeChoice => ({ id: `custom:${++customCounter}`, def })
+
+/** Store fields for a set of project settings. */
+function fromSettings(s: ProjectSettings) {
+  const polyhedron: ShapeChoice =
+    s.preset && isPresetId(s.preset)
+      ? { id: s.preset, def: preset(s.preset) }
+      : customChoice(s.polyhedron)
+  return {
+    polyhedron,
+    rotation: s.rotation,
+    edgeLengthMm: s.edgeLengthMm,
+    resolution: s.resolution,
+    layerStyles: { ...s.layerStyles },
+    graticuleIntervalDeg: s.graticuleIntervalDeg,
+    thicknessMm: s.thicknessMm,
+    kerfEnabled: s.kerfEnabled,
+    kerfMm: s.kerfMm,
+    detail10m: s.detail10m,
+  }
+}
 
 interface AppState {
   // Settings (saved in the project file)
@@ -46,6 +67,11 @@ interface AppState {
   edgeLengthMm: number
   resolution: Resolution
   layerStyles: Record<LayerId, LayerStyle>
+  graticuleIntervalDeg: number
+  thicknessMm: number
+  kerfEnabled: boolean
+  kerfMm: number
+  detail10m: number
   // UI / derived
   selectedFace: number
   /** Face shown enlarged in the dialog, or null. */
@@ -58,6 +84,8 @@ interface AppState {
   computing: boolean
   error: string | null
 
+  /** Replace all project settings (open, autosave restore, new project). */
+  applySettings: (settings: ProjectSettings) => void
   setPreset: (id: PresetId) => void
   setCustom: (def: PolyhedronDef) => void
   chooseCustom: () => void
@@ -71,18 +99,20 @@ interface AppState {
   setDragging: (dragging: boolean) => void
   setArtwork: (artwork: Artwork) => void
   setLayerEnabled: (id: LayerId, enabled: boolean) => void
+  setLayerStyle: (id: LayerId, patch: Partial<Omit<LayerStyle, 'label'>>) => void
+  setGraticuleIntervalDeg: (deg: number) => void
+  setThicknessMm: (mm: number) => void
+  setKerfEnabled: (on: boolean) => void
+  setKerfMm: (mm: number) => void
+  setDetail10m: (fraction: number) => void
   setComputing: () => void
   setProjection: (p: Omit<Projection, 'faces'> & { svgs: readonly string[] }) => void
   setError: (message: string) => void
 }
 
 export const useAppStore = create<AppState>()((set, get) => ({
-  polyhedron: { id: 'icosahedron', def: preset('icosahedron') },
+  ...fromSettings(DEFAULT_SETTINGS),
   custom: null,
-  rotation: IDENTITY,
-  edgeLengthMm: 100,
-  resolution: '50m',
-  layerStyles: { ...DEFAULT_LAYER_STYLES },
   selectedFace: 0,
   enlargedFace: null,
   showFaceNumbers: false,
@@ -92,9 +122,19 @@ export const useAppStore = create<AppState>()((set, get) => ({
   computing: false,
   error: null,
 
+  applySettings: (settings) => {
+    const fields = fromSettings(settings)
+    const isCustom = !isPresetId(fields.polyhedron.id)
+    set({
+      ...fields,
+      ...(isCustom ? { custom: fields.polyhedron } : {}),
+      selectedFace: 0,
+      enlargedFace: null,
+    })
+  },
   setPreset: (id) => set({ polyhedron: { id, def: preset(id) }, selectedFace: 0 }),
   setCustom: (def) => {
-    const choice = { id: `custom:${++customCounter}`, def }
+    const choice = customChoice(def)
     set({ polyhedron: choice, custom: choice, selectedFace: 0 })
   },
   chooseCustom: () => {
@@ -113,8 +153,18 @@ export const useAppStore = create<AppState>()((set, get) => ({
   resetRotation: () => set({ rotation: IDENTITY }),
   setDragging: (dragging) => set({ dragging }),
   setArtwork: (artwork) => set({ artwork }),
-  setLayerEnabled: (id, enabled) =>
-    set((s) => ({ layerStyles: { ...s.layerStyles, [id]: { ...s.layerStyles[id], enabled } } })),
+  setLayerEnabled: (id, enabled) => get().setLayerStyle(id, { enabled }),
+  setLayerStyle: (id, patch) =>
+    set((s) => ({ layerStyles: { ...s.layerStyles, [id]: { ...s.layerStyles[id], ...patch } } })),
+  setGraticuleIntervalDeg: (deg) => set({ graticuleIntervalDeg: deg }),
+  setThicknessMm: (mm) => {
+    if (Number.isFinite(mm) && mm > 0) set({ thicknessMm: mm })
+  },
+  setKerfEnabled: (on) => set({ kerfEnabled: on }),
+  setKerfMm: (mm) => {
+    if (Number.isFinite(mm) && mm >= 0 && mm < 5) set({ kerfMm: mm })
+  },
+  setDetail10m: (fraction) => set({ detail10m: Math.min(1, Math.max(0.01, fraction)) }),
   setComputing: () => set({ computing: true }),
   setProjection: ({ svgs, ...rest }) => {
     for (const f of get().projection?.faces ?? []) URL.revokeObjectURL(f.url)
@@ -129,9 +179,15 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
 /** The settings that define the exported files, as stored in project.json. */
 export const selectSettings = (s: AppState): ProjectSettings => ({
+  preset: isPresetId(s.polyhedron.id) ? s.polyhedron.id : null,
   polyhedron: s.polyhedron.def,
   rotation: s.rotation,
   edgeLengthMm: s.edgeLengthMm,
   resolution: s.resolution,
   layerStyles: s.layerStyles,
+  graticuleIntervalDeg: s.graticuleIntervalDeg,
+  thicknessMm: s.thicknessMm,
+  kerfEnabled: s.kerfEnabled,
+  kerfMm: s.kerfMm,
+  detail10m: s.detail10m,
 })

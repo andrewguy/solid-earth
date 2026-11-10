@@ -1,9 +1,10 @@
 import { RotateCcw, Upload } from 'lucide-react'
-import { type ReactNode, useRef, useState } from 'react'
+import { type ReactNode, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
 import { rotationReadout } from '@/core/geo/rotation'
-import type { LayerId } from '@/core/layers'
+import { dihedralGroups } from '@/core/panel'
+import { buildFrames } from '@/core/polyhedron/faces'
 import { importPolyhedron } from '@/core/polyhedron/import'
 import { PolyhedronError } from '@/core/polyhedron/preprocess'
 import { PRESETS, PRESET_IDS, isPresetId, preset } from '@/core/polyhedron/presets'
@@ -23,7 +24,11 @@ import {
   SelectValue,
 } from '@/ui/components/ui/select'
 import { Separator } from '@/ui/components/ui/separator'
+import { Slider } from '@/ui/components/ui/slider'
 import { Switch } from '@/ui/components/ui/switch'
+import { LayerTable } from '@/ui/layout/LayerTable'
+import { ProjectToolbar } from '@/ui/layout/ProjectToolbar'
+import { Warnings } from '@/ui/layout/Warnings'
 import { useAppStore } from '@/ui/store'
 
 // Edge length, data resolution and the coastline/border toggles are live; the rest are placeholders until
@@ -40,6 +45,69 @@ function circumDiameterMm(def: PolyhedronDef, edgeMm: number): number {
     })
   const radius = Math.max(...def.vertices.map(length))
   return (2 * radius * edgeMm) / longest
+}
+
+/** Simplification control for 1:10m (plan §6.2). Commits on release: re-simplifying is slow. */
+function DetailSlider() {
+  const detail = useAppStore((s) => s.detail10m)
+  const setDetail = useAppStore((s) => s.setDetail10m)
+  const [draft, setDraft] = useState<number | null>(null)
+  const shown = draft ?? detail
+  return (
+    <div className="space-y-2">
+      <Label className="text-xs">Detail kept: {Math.round(shown * 100)}% of points</Label>
+      <Slider
+        min={5}
+        max={100}
+        step={5}
+        value={[Math.round(shown * 100)]}
+        onValueChange={([v]) => v !== undefined && setDraft(v / 100)}
+        onValueCommit={([v]) => {
+          if (v !== undefined) setDetail(v / 100)
+          setDraft(null)
+        }}
+      />
+      <p className="text-xs text-muted-foreground">
+        Full 1:10m detail is finer than a laser can engrave on most panels and slows everything
+        down; 15–30% is usually plenty.
+      </p>
+    </div>
+  )
+}
+
+/** Dihedral angles and butt-joint V-gaps (plan §6.3). */
+function PanelInfo() {
+  const def = useAppStore((s) => s.polyhedron.def)
+  const thicknessMm = useAppStore((s) => s.thicknessMm)
+  const groups = useMemo(() => dihedralGroups(buildFrames(def), thicknessMm), [def, thicknessMm])
+  return (
+    <>
+      <table className="w-full text-xs">
+        <thead className="text-muted-foreground">
+          <tr className="text-left">
+            <th className="font-normal">Edges</th>
+            <th className="font-normal">Dihedral</th>
+            <th className="font-normal">V-gap</th>
+            <th className="text-right font-normal">Inner gap</th>
+          </tr>
+        </thead>
+        <tbody className="font-mono">
+          {groups.map((g) => (
+            <tr key={g.dihedralDeg.toFixed(2)}>
+              <td>{g.edgeCount}</td>
+              <td>{g.dihedralDeg.toFixed(2)}°</td>
+              <td>{g.vGapDeg.toFixed(2)}°</td>
+              <td className="text-right">{g.innerGapMm.toFixed(2)} mm</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="text-xs text-muted-foreground">
+        Butt joints: panels are cut square at the true face size, so outer faces meet exactly and a
+        V opens on the inside ({thicknessMm} mm material). Fill it with a glue or epoxy fillet.
+      </p>
+    </>
+  )
 }
 
 function RotationReadout() {
@@ -140,16 +208,6 @@ function ShapePicker() {
   )
 }
 
-const LAYERS: readonly { id: LayerId; label: string; available: boolean }[] = [
-  { id: 'coastlines', label: 'Coastlines', available: true },
-  { id: 'borders', label: 'Country borders', available: true },
-  { id: 'rivers', label: 'Rivers', available: false },
-  { id: 'lakes', label: 'Lakes', available: false },
-  { id: 'land', label: 'Land fill', available: false },
-  { id: 'ocean', label: 'Ocean fill', available: false },
-  { id: 'graticule', label: 'Graticule', available: false },
-]
-
 const isResolution = (v: string): v is Resolution => (RESOLUTIONS as readonly string[]).includes(v)
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
@@ -209,20 +267,25 @@ export function LeftPanel() {
   const edgeLengthMm = useAppStore((s) => s.edgeLengthMm)
   const polyhedronDef = useAppStore((s) => s.polyhedron.def)
   const setEdgeLengthMm = useAppStore((s) => s.setEdgeLengthMm)
-  const layerStyles = useAppStore((s) => s.layerStyles)
-  const setLayerEnabled = useAppStore((s) => s.setLayerEnabled)
   const resolution = useAppStore((s) => s.resolution)
   const setResolution = useAppStore((s) => s.setResolution)
-  const [kerfEnabled, setKerfEnabled] = useState(false)
+  const thicknessMm = useAppStore((s) => s.thicknessMm)
+  const setThicknessMm = useAppStore((s) => s.setThicknessMm)
+  const kerfEnabled = useAppStore((s) => s.kerfEnabled)
+  const setKerfEnabled = useAppStore((s) => s.setKerfEnabled)
+  const kerfMm = useAppStore((s) => s.kerfMm)
+  const setKerfMm = useAppStore((s) => s.setKerfMm)
 
   return (
     <aside className="flex min-h-0 flex-col border-r">
-      <header className="px-4 py-3">
+      <header className="flex items-center justify-between gap-2 py-2 pr-2 pl-4">
         <h1 className="text-sm font-semibold">Polyhedral Map Projector</h1>
+        <ProjectToolbar />
       </header>
       <Separator />
       <ScrollArea className="min-h-0 flex-1">
         <div className="space-y-6 p-4">
+          <Warnings />
           <Section title="Shape">
             <ShapePicker />
           </Section>
@@ -240,14 +303,33 @@ export function LeftPanel() {
               Longest edge. Circumsphere diameter:{' '}
               {circumDiameterMm(polyhedronDef, edgeLengthMm).toFixed(1)} mm
             </p>
-            <NumberField id="thickness" label="Thickness" unit="mm" value={3} step={0.1} />
+            <NumberField
+              id="thickness"
+              label="Thickness"
+              unit="mm"
+              value={thicknessMm}
+              onCommit={setThicknessMm}
+              step={0.1}
+            />
             <div className="flex items-center justify-between">
               <Label htmlFor="kerf-on">Kerf compensation</Label>
               <Switch id="kerf-on" checked={kerfEnabled} onCheckedChange={setKerfEnabled} />
             </div>
             {kerfEnabled && (
-              <NumberField id="kerf" label="Kerf" unit="mm" value={0.15} step={0.01} />
+              <NumberField
+                id="kerf"
+                label="Kerf"
+                unit="mm"
+                value={kerfMm}
+                onCommit={setKerfMm}
+                step={0.01}
+              />
             )}
+            <p className="text-xs text-muted-foreground">
+              {kerfEnabled
+                ? `Cut path is offset outward by ${(kerfMm / 2).toFixed(3)} mm. Engraving is never offset.`
+                : 'Off: use LightBurn’s kerf offset instead, or turn this on to bake it into the SVG.'}
+            </p>
           </Section>
 
           <Section title="Map data">
@@ -263,27 +345,18 @@ export function LeftPanel() {
               <SelectContent>
                 <SelectItem value="110m">1:110m (coarse)</SelectItem>
                 <SelectItem value="50m">1:50m (medium)</SelectItem>
-                <SelectItem value="10m" disabled>
-                  1:10m (fine)
-                </SelectItem>
+                <SelectItem value="10m">1:10m (fine, large download)</SelectItem>
               </SelectContent>
             </Select>
+            {resolution === '10m' && <DetailSlider />}
+          </Section>
+
+          <Section title="Panel geometry">
+            <PanelInfo />
           </Section>
 
           <Section title="Layers">
-            <ul className="space-y-2">
-              {LAYERS.map((l) => (
-                <li key={l.id} className="flex items-center justify-between">
-                  <Label htmlFor={`layer-${l.id}`}>{l.label}</Label>
-                  <Switch
-                    id={`layer-${l.id}`}
-                    disabled={!l.available}
-                    checked={l.available && layerStyles[l.id].enabled}
-                    onCheckedChange={(on) => setLayerEnabled(l.id, on)}
-                  />
-                </li>
-              ))}
-            </ul>
+            <LayerTable />
           </Section>
 
           <Section title="Globe rotation">

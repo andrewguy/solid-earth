@@ -24,6 +24,9 @@ export function useProjectionSync(): void {
   const edgeLengthMm = useAppStore((s) => s.edgeLengthMm)
   const rotation = useAppStore((s) => s.rotation)
   const layerStyles = useAppStore((s) => s.layerStyles)
+  const graticuleIntervalDeg = useAppStore((s) => s.graticuleIntervalDeg)
+  const kerfMm = useAppStore((s) => (s.kerfEnabled ? s.kerfMm : 0))
+  const detail10m = useAppStore((s) => s.detail10m)
   const dragging = useAppStore((s) => s.dragging)
   const latest = useRef(0)
   const wasDragging = useRef(false)
@@ -44,7 +47,14 @@ export function useProjectionSync(): void {
     const timer = setTimeout(
       () => {
         projector()
-          .project({ polyhedron, resolution, edgeLengthMm, rotation, layerStyles })
+          .project({
+            polyhedron,
+            resolution,
+            edgeLengthMm,
+            rotation,
+            layerStyles,
+            graticuleIntervalDeg,
+          })
           .then((r) => {
             if (id !== latest.current) return
             setArtwork({ shapeId: r.shapeId, rotation, mmPerUnit: r.mmPerUnit, faces: r.faces })
@@ -62,7 +72,17 @@ export function useProjectionSync(): void {
       justReleased ? 0 : DEBOUNCE_MS,
     )
     return () => clearTimeout(timer)
-  }, [polyhedron, resolution, edgeLengthMm, rotation, layerStyles, dragging])
+  }, [
+    polyhedron,
+    resolution,
+    edgeLengthMm,
+    rotation,
+    layerStyles,
+    graticuleIntervalDeg,
+    kerfMm,
+    detail10m,
+    dragging,
+  ])
 
   // Interactive preview while dragging.
   useEffect(() => {
@@ -83,6 +103,7 @@ export function useProjectionSync(): void {
           edgeLengthMm: s.edgeLengthMm,
           rotation,
           layerStyles: s.layerStyles,
+          graticuleIntervalDeg: s.graticuleIntervalDeg,
           wantSvg: false,
         })
         .then((r) => {

@@ -64,9 +64,41 @@ export function densifyLonLat(line: LonLatLine, maxStepDeg = 0.5): Position[] {
   return out
 }
 
-/** Linework ready for projection: seams removed, densified, converted to unit vectors. */
-export function prepareLines(lines: readonly LonLatLine[], maxStepDeg = 0.5): Vec3[][] {
-  return removeSeams(lines).map((line) =>
+/**
+ * Linework ready for projection: seams removed, densified, converted to unit vectors.
+ * Pass `keepSeams` for generated lines that legitimately run along ±180° (the graticule).
+ */
+export function prepareLines(
+  lines: readonly LonLatLine[],
+  maxStepDeg = 0.5,
+  { keepSeams = false } = {},
+): Vec3[][] {
+  return (keepSeams ? lines : removeSeams(lines)).map((line) =>
     densifyLonLat(line, maxStepDeg).map((p) => lonLatToVec3(p[0]!, p[1]!)),
+  )
+}
+
+/** A polygon (exterior + holes) as open rings of unit vectors, d3 winding preserved. */
+export type SphereRings = Vec3[][]
+
+/**
+ * Polygons ready for spherical clipping: rings densified and converted to unit vectors, with
+ * the closing point dropped. Winding is kept as given (d3 / world-atlas convention: exterior
+ * clockwise seen from outside, holes counter-clockwise; plan §4.2).
+ */
+export function preparePolygons(
+  polygons: readonly (readonly LonLatLine[])[],
+  maxStepDeg = 0.5,
+): SphereRings[] {
+  return polygons.map((rings) =>
+    rings
+      .map((ring) => {
+        const pts = densifyLonLat(ring, maxStepDeg).map((p) => lonLatToVec3(p[0]!, p[1]!))
+        const first = pts[0]
+        const last = pts[pts.length - 1]
+        if (first && last && pts.length > 1 && first.every((c, i) => c === last[i])) pts.pop()
+        return pts
+      })
+      .filter((r) => r.length >= 3),
   )
 }

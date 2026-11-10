@@ -1,5 +1,5 @@
 import { type Quat, conjugate, fromAxisAngle, multiply, normalizeQuat, rotate } from '../quat'
-import type { Vec3 } from '../vec3'
+import { type Vec3, normalize } from '../vec3'
 import { vec3ToLonLat } from './lonlat'
 
 const RAD = Math.PI / 180
@@ -34,18 +34,31 @@ export function rotationReadout(q: Quat): RotationReadout {
   return { lon, lat, roll }
 }
 
-/** Shortest rotation taking unit vector `from` onto unit vector `to`. */
-export function rotationBetween(from: Vec3, to: Vec3): Quat {
+/** Direct formula; well conditioned only while the angle is clearly below 180°. */
+function rotationBetweenNear(from: Vec3, to: Vec3): Quat {
   const c: Vec3 = [
     from[1] * to[2] - from[2] * to[1],
     from[2] * to[0] - from[0] * to[2],
     from[0] * to[1] - from[1] * to[0],
   ]
-  const w = 1 + from[0] * to[0] + from[1] * to[1] + from[2] * to[2]
-  if (w < 1e-12) {
-    // Opposite vectors: rotate π about any perpendicular axis.
-    const axis: Vec3 = Math.abs(from[0]) < 0.9 ? [0, -from[2], from[1]] : [-from[2], 0, from[0]]
-    return fromAxisAngle(axis, Math.PI)
+  return normalizeQuat([c[0], c[1], c[2], 1 + from[0] * to[0] + from[1] * to[1] + from[2] * to[2]])
+}
+
+/**
+ * Shortest rotation taking unit vector `from` onto unit vector `to`.
+ *
+ * The direct formula loses all precision as the vectors approach opposite (1 + a·b cancels),
+ * so past 120° this goes via a vector perpendicular to `from` and composes two ~90° rotations.
+ * Each step maps its own inputs exactly, so the result is accurate however rough the midpoint.
+ */
+export function rotationBetween(from: Vec3, to: Vec3): Quat {
+  const d = from[0] * to[0] + from[1] * to[1] + from[2] * to[2]
+  if (d > -0.5) return rotationBetweenNear(from, to)
+  let m: Vec3 = [to[0] - d * from[0], to[1] - d * from[1], to[2] - d * from[2]]
+  if (Math.hypot(...m) < 1e-6) {
+    // Exactly opposite: any perpendicular will do.
+    m = Math.abs(from[0]) < 0.9 ? [0, -from[2], from[1]] : [-from[2], 0, from[0]]
   }
-  return normalizeQuat([c[0], c[1], c[2], w])
+  const mid = normalize(m)
+  return multiply(rotationBetweenNear(mid, to), rotationBetweenNear(from, mid))
 }

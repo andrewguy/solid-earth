@@ -9,7 +9,7 @@ import {
   borderLines,
   coastlineLines,
 } from '@/core/geo/topojson'
-import { DEFAULT_LAYER_STYLES, type LineLayerId } from '@/core/layers'
+import { DEFAULT_LAYER_STYLES, type LineSourceId } from '@/core/layers'
 import {
   type FaceArtwork,
   type PreparedMap,
@@ -36,8 +36,8 @@ const map: PreparedMap = prepareMap({
   borders: prepareLines(borderLines(countries110m as unknown as CountriesTopology)),
 })
 
-const LINE_LAYERS: LineLayerId[] = ['coastlines', 'borders']
-const allPolylines = (art: FaceArtwork) => LINE_LAYERS.flatMap((id) => art.layers[id]!.polylines)
+const LINE_LAYERS: LineSourceId[] = ['coastlines', 'borders']
+const allPolylines = (art: FaceArtwork) => LINE_LAYERS.flatMap((id) => art.lines[id]!)
 
 /** Rotation taking unit vector `from` onto unit vector `to`. */
 function rotationBetween(from: Vec3, to: Vec3): Quat {
@@ -168,7 +168,7 @@ describe('seams on faces centred at 180°E and 90°S (50m coastlines)', () => {
       (Math.abs(a[0]!) > 179.9999 && Math.abs(b[0]!) > 179.9999 && a[0]! * b[0]! > 0) ||
       (a[1]! < -89.99 && b[1]! < -89.99)
     let count = 0
-    for (const pl of art.layers.coastlines!.polylines) {
+    for (const pl of art.lines.coastlines!) {
       const ll = pl.map(back)
       for (let i = 1; i < ll.length; i++) if (isSeam(ll[i - 1]!, ll[i]!)) count++
     }

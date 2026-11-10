@@ -32,7 +32,9 @@ describe('face texture mapping', () => {
         face.vertices2D.flatMap(([x, y]) => [x * mmPerUnit, y * mmPerUnit]),
       )
       const packed: PackedFace = {
-        layers: { coastlines: { coords, starts: new Uint32Array([0, n]) } },
+        rotation: 0,
+        lines: { coastlines: { coords, starts: new Uint32Array([0, n]) } },
+        fills: {},
       }
       const [w, h] = canvasSize(face, 512)
       const { ctx, points } = recordingContext(w, h)
