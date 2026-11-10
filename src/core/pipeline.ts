@@ -1,3 +1,4 @@
+import { type Cap, boundingCap, capsOverlap, faceCap } from './clip/cull'
 import { clipPolylineToCone } from './clip/polyline'
 import type { LineLayerId } from './layers'
 import { roundPolyline } from './planar/round'
@@ -6,9 +7,24 @@ import { gnomonic } from './project/gnomonic'
 import { IDENTITY, type Quat, rotate } from './quat'
 import { type Vec2, type Vec3, distance } from './vec3'
 
+/** A unit-vector polyline with its bounding cap, for culling. */
+export interface PreparedLine {
+  readonly points: readonly Vec3[]
+  readonly cap: Cap
+}
+
 /** Map data prepared once per dataset (plan §4.2): unit-vector linework per layer. */
 export interface PreparedMap {
-  readonly lines: Partial<Record<LineLayerId, readonly Vec3[][]>>
+  readonly lines: Partial<Record<LineLayerId, readonly PreparedLine[]>>
+}
+
+/** Wrap unit-vector linework (e.g. from `prepareLines`) with bounding caps. */
+export function prepareMap(lines: Partial<Record<LineLayerId, readonly Vec3[][]>>): PreparedMap {
+  const out: Partial<Record<LineLayerId, PreparedLine[]>> = {}
+  for (const [id, ls] of Object.entries(lines) as [LineLayerId, Vec3[][]][]) {
+    out[id] = ls.map((points) => ({ points, cap: boundingCap(points) }))
+  }
+  return { lines: out }
 }
 
 export interface LayerArtwork {
@@ -42,9 +58,12 @@ export function longestEdge(frames: PolyhedronFrames): number {
 /** Apply the globe rotation to all prepared vectors (plan §4.3). */
 export function rotateMap(map: PreparedMap, q: Quat): PreparedMap {
   if (q.every((c, i) => c === IDENTITY[i])) return map
-  const lines: Partial<Record<LineLayerId, Vec3[][]>> = {}
-  for (const [id, ls] of Object.entries(map.lines) as [LineLayerId, Vec3[][]][]) {
-    lines[id] = ls.map((line) => line.map((p) => rotate(q, p)))
+  const lines: Partial<Record<LineLayerId, PreparedLine[]>> = {}
+  for (const [id, ls] of Object.entries(map.lines) as [LineLayerId, PreparedLine[]][]) {
+    lines[id] = ls.map(({ points, cap }) => ({
+      points: points.map((p) => rotate(q, p)),
+      cap: { centre: rotate(q, cap.centre), radius: cap.radius },
+    }))
   }
   return { lines }
 }
@@ -69,11 +88,13 @@ export function buildFaceArtwork(
   if (!face) throw new Error(`no face ${faceIndex}`)
   const finish = (pts: Vec2[]) => (precisionMm === null ? pts : roundPolyline(pts, precisionMm))
 
+  const cap = faceCap(face)
   const layers: Partial<Record<LineLayerId, LayerArtwork>> = {}
-  for (const [id, lines] of Object.entries(map.lines) as [LineLayerId, Vec3[][]][]) {
+  for (const [id, lines] of Object.entries(map.lines) as [LineLayerId, PreparedLine[]][]) {
     const polylines: Vec2[][] = []
     for (const line of lines) {
-      for (const run of clipPolylineToCone(line, face.edgePlanes)) {
+      if (!capsOverlap(cap, line.cap)) continue
+      for (const run of clipPolylineToCone(line.points, face.edgePlanes)) {
         const pts = finish(projectRun(face, run, mmPerUnit))
         if (pts.length >= 2) polylines.push(pts)
       }
@@ -83,4 +104,13 @@ export function buildFaceArtwork(
 
   const outline = finish(face.vertices2D.map(([x, y]): Vec2 => [x * mmPerUnit, y * mmPerUnit]))
   return { faceIndex, outline, layers }
+}
+
+/** Artwork for every face. */
+export function buildAllFaces(
+  frames: PolyhedronFrames,
+  map: PreparedMap,
+  options: ArtworkOptions,
+): FaceArtwork[] {
+  return frames.faces.map((_, i) => buildFaceArtwork(frames, i, map, options))
 }

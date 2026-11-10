@@ -15,6 +15,7 @@ import {
   type PreparedMap,
   buildFaceArtwork,
   longestEdge,
+  prepareMap,
   rotateMap,
 } from '@/core/pipeline'
 import { buildFrames, planePoint } from '@/core/polyhedron/faces'
@@ -30,12 +31,10 @@ const frames = buildFrames(icosahedron())
 const EDGE_MM = 100
 const mmPerUnit = EDGE_MM / longestEdge(frames)
 
-const map: PreparedMap = {
-  lines: {
-    coastlines: prepareLines(coastlineLines(land110m as unknown as LandTopology)),
-    borders: prepareLines(borderLines(countries110m as unknown as CountriesTopology)),
-  },
-}
+const map: PreparedMap = prepareMap({
+  coastlines: prepareLines(coastlineLines(land110m as unknown as LandTopology)),
+  borders: prepareLines(borderLines(countries110m as unknown as CountriesTopology)),
+})
 
 const LINE_LAYERS: LineLayerId[] = ['coastlines', 'borders']
 const allPolylines = (art: FaceArtwork) => LINE_LAYERS.flatMap((id) => art.layers[id]!.polylines)
@@ -149,13 +148,11 @@ describe('panel handedness', () => {
 describe('seams on faces centred at 180°E and 90°S (50m coastlines)', () => {
   const face = frames.faces[0]!
   const coast50m = coastlineLines(land50m as unknown as LandTopology)
-  const withSeamRemoval: PreparedMap = { lines: { coastlines: prepareLines(coast50m) } }
+  const withSeamRemoval = prepareMap({ coastlines: prepareLines(coast50m) })
   // Negative control: same pipeline without seam removal.
-  const withoutSeamRemoval: PreparedMap = {
-    lines: {
-      coastlines: coast50m.map((l) => densifyLonLat(l).map((p) => lonLatToVec3(p[0]!, p[1]!))),
-    },
-  }
+  const withoutSeamRemoval = prepareMap({
+    coastlines: coast50m.map((l) => densifyLonLat(l).map((p) => lonLatToVec3(p[0]!, p[1]!))),
+  })
 
   /** Count output segments that map back to a seam (antimeridian run or south-pole edge). */
   function seamSegments(source: PreparedMap, target: Vec3): number {

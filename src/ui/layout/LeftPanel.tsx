@@ -1,7 +1,14 @@
 import { RotateCcw, Upload } from 'lucide-react'
-import { type ReactNode, useState } from 'react'
+import { type ReactNode, useRef, useState } from 'react'
+import { toast } from 'sonner'
 
 import type { LayerId } from '@/core/layers'
+import { importPolyhedron } from '@/core/polyhedron/import'
+import { PolyhedronError } from '@/core/polyhedron/preprocess'
+import { PRESETS, PRESET_IDS, isPresetId, preset } from '@/core/polyhedron/presets'
+import type { PolyhedronDef } from '@/core/polyhedron/types'
+import { distance, length } from '@/core/vec3'
+import { RESOLUTIONS, type Resolution } from '@/core/settings'
 
 import { Button } from '@/ui/components/ui/button'
 import { Input } from '@/ui/components/ui/input'
@@ -18,17 +25,89 @@ import { Separator } from '@/ui/components/ui/separator'
 import { Switch } from '@/ui/components/ui/switch'
 import { useAppStore } from '@/ui/store'
 
-// Edge length and the coastline/border toggles are live; the rest are placeholders until
+// Edge length, data resolution and the coastline/border toggles are live; the rest are placeholders until
 // their milestones land.
 
-const SHAPES = [
-  { id: 'tetrahedron', label: 'Tetrahedron' },
-  { id: 'cube', label: 'Cube' },
-  { id: 'octahedron', label: 'Octahedron' },
-  { id: 'dodecahedron', label: 'Dodecahedron' },
-  { id: 'icosahedron', label: 'Icosahedron' },
-  { id: 'truncated-icosahedron', label: 'Truncated icosahedron' },
-] as const
+const CUSTOM = 'custom'
+
+/** Circumsphere diameter in mm when the longest edge is `edgeMm` (plan §3). */
+function circumDiameterMm(def: PolyhedronDef, edgeMm: number): number {
+  let longest = 0
+  for (const f of def.faces)
+    f.forEach((a, k) => {
+      longest = Math.max(longest, distance(def.vertices[a]!, def.vertices[f[(k + 1) % f.length]!]!))
+    })
+  const radius = Math.max(...def.vertices.map(length))
+  return (2 * radius * edgeMm) / longest
+}
+
+function ShapePicker() {
+  const polyhedron = useAppStore((s) => s.polyhedron)
+  const custom = useAppStore((s) => s.custom)
+  const setPreset = useAppStore((s) => s.setPreset)
+  const setCustom = useAppStore((s) => s.setCustom)
+  const chooseCustom = useAppStore((s) => s.chooseCustom)
+  const fileInput = useRef<HTMLInputElement>(null)
+  const value = isPresetId(polyhedron.id) ? polyhedron.id : CUSTOM
+
+  async function onFile(file: File) {
+    try {
+      const def = importPolyhedron(file.name, await file.text())
+      setCustom(def)
+      toast.success(`Imported ${file.name}`, {
+        description: `${def.faces.length} faces, ${def.vertices.length} vertices`,
+      })
+    } catch (err) {
+      const message = err instanceof PolyhedronError ? err.message : String(err)
+      toast.error(`Could not import ${file.name}`, { description: message, duration: 10000 })
+    }
+  }
+
+  return (
+    <>
+      <Select
+        value={value}
+        onValueChange={(v) => {
+          if (v === CUSTOM) chooseCustom()
+          else if (isPresetId(v)) setPreset(v)
+        }}
+      >
+        <SelectTrigger className="w-full" aria-label="Polyhedron">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {PRESET_IDS.map((id) => (
+            <SelectItem key={id} value={id}>
+              {PRESETS[id].label} ({preset(id).faces.length})
+            </SelectItem>
+          ))}
+          {custom && (
+            <SelectItem value={CUSTOM}>
+              Custom: {custom.def.name} ({custom.def.faces.length})
+            </SelectItem>
+          )}
+        </SelectContent>
+      </Select>
+      <input
+        ref={fileInput}
+        type="file"
+        accept=".obj,.json"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0]
+          e.target.value = '' // allow re-importing the same file
+          if (file) void onFile(file)
+        }}
+      />
+      <Button variant="outline" className="w-full" onClick={() => fileInput.current?.click()}>
+        <Upload /> Import OBJ / JSON
+      </Button>
+      <p className="text-xs text-muted-foreground">
+        Convex shapes only. Triangulated meshes are merged back into flat faces.
+      </p>
+    </>
+  )
+}
 
 const LAYERS: readonly { id: LayerId; label: string; available: boolean }[] = [
   { id: 'coastlines', label: 'Coastlines', available: true },
@@ -39,6 +118,8 @@ const LAYERS: readonly { id: LayerId; label: string; available: boolean }[] = [
   { id: 'ocean', label: 'Ocean fill', available: false },
   { id: 'graticule', label: 'Graticule', available: false },
 ]
+
+const isResolution = (v: string): v is Resolution => (RESOLUTIONS as readonly string[]).includes(v)
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -95,9 +176,12 @@ function NumberField({
 
 export function LeftPanel() {
   const edgeLengthMm = useAppStore((s) => s.edgeLengthMm)
+  const polyhedronDef = useAppStore((s) => s.polyhedron.def)
   const setEdgeLengthMm = useAppStore((s) => s.setEdgeLengthMm)
   const layerStyles = useAppStore((s) => s.layerStyles)
   const setLayerEnabled = useAppStore((s) => s.setLayerEnabled)
+  const resolution = useAppStore((s) => s.resolution)
+  const setResolution = useAppStore((s) => s.setResolution)
   const [kerfEnabled, setKerfEnabled] = useState(false)
 
   return (
@@ -109,21 +193,7 @@ export function LeftPanel() {
       <ScrollArea className="min-h-0 flex-1">
         <div className="space-y-6 p-4">
           <Section title="Shape">
-            <Select defaultValue="icosahedron">
-              <SelectTrigger className="w-full" aria-label="Polyhedron">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {SHAPES.map((s) => (
-                  <SelectItem key={s.id} value={s.id}>
-                    {s.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Button variant="outline" className="w-full" disabled>
-              <Upload /> Import OBJ / JSON
-            </Button>
+            <ShapePicker />
           </Section>
 
           <Section title="Size & material">
@@ -135,6 +205,10 @@ export function LeftPanel() {
               onCommit={setEdgeLengthMm}
               step={1}
             />
+            <p className="text-xs text-muted-foreground">
+              Longest edge. Circumsphere diameter:{' '}
+              {circumDiameterMm(polyhedronDef, edgeLengthMm).toFixed(1)} mm
+            </p>
             <NumberField id="thickness" label="Thickness" unit="mm" value={3} step={0.1} />
             <div className="flex items-center justify-between">
               <Label htmlFor="kerf-on">Kerf compensation</Label>
@@ -146,7 +220,12 @@ export function LeftPanel() {
           </Section>
 
           <Section title="Map data">
-            <Select defaultValue="110m">
+            <Select
+              value={resolution}
+              onValueChange={(v) => {
+                if (isResolution(v)) setResolution(v)
+              }}
+            >
               <SelectTrigger className="w-full" aria-label="Data resolution">
                 <SelectValue />
               </SelectTrigger>
