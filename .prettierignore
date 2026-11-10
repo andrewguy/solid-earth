@@ -1,0 +1,8 @@
+dist
+coverage
+node_modules
+.cache
+src/data
+package-lock.json
+plan.md
+.claude
