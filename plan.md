@@ -1,6 +1,8 @@
 # Polyhedral Map Projector: Project Plan
 
-> Status: **scope agreed (v1, 2026-11-10)**. Ready to start milestone 1.
+> Status: **Release 1 functionally complete (2026-11-10)**, except milestone 9 (deployment), which was
+> deferred. Milestones 1–8 and 10 are implemented and tested; see §11 for progress, changes from
+> this plan, and the manual checks still outstanding.
 
 ---
 
@@ -17,7 +19,7 @@ A client-side web app that takes vector world-map data (countries, coastlines, r
 ## 2. Requirements
 
 ### 2.1 Release 1 (panel mode)
-- Load Natural Earth vector data. 110m and 50m are bundled; 10m loads on demand.
+- Load Natural Earth vector data. 110m and 50m are bundled. (10m was dropped; see §11.)
 - Polyhedron presets: tetrahedron, cube, octahedron, dodecahedron, icosahedron, truncated icosahedron. The icosahedron is the primary dev/test target.
 - **Custom polyhedra, early:** import from OBJ and from JSON `{vertices, faces}`. Convex only.
 - Project the map onto each face, clipped to the face polygon, with exact edge continuity across neighbouring faces.
@@ -65,14 +67,14 @@ A client-side web app that takes vector world-map data (countries, coastlines, r
 | Kerf | Optional outward offset of the cut path by kerf/2. **Off by default**, so users can rely on LightBurn's own offset. Default value 0.15 mm. Engraving is never offset. |
 | Engraving style | Fully configurable per layer: stroke and/or fill, colour, LightBurn layer. |
 | Map layers | Coastlines, country borders, rivers, lakes, land, optional ocean (face minus land), graticule. No text labels in R1. |
-| Data resolution | User-selectable. 110m and 50m bundled; 10m loaded on demand from the site's own static assets, with a simplification control. |
+| Data resolution | User-selectable: 110m or 50m, both bundled. 50m is the default. 10m was dropped (2026-11-10): no visible benefit at laser scale for its size. |
 | Model sizing | Edge length in mm, with the resulting circumsphere diameter shown alongside. For custom shapes with unequal edges, the **longest edge** = N mm. One global scale applies to all faces. |
 | Default LightBurn colours | Cut = layer 02 `#FF0000`. Engrave lines (coast/borders/rivers) = 00 `#000000`. Engrave fills (land/lakes/ocean) = 01 `#0000FF`. Score/graticule = 03 `#00E000`. All editable. |
 | Face orientation in SVG | **North-up:** each panel is rotated so the local north direction at the face centre points up. If a pole is on or very near the face centre, the longest edge goes on the baseline instead. |
 | File naming | `<shape>_face-NN.svg` (zero-padded face index from the polyhedron definition; the same number appears in the 2D and 3D previews). ZIP: `<shape>_faces.zip`, which includes `project.json`. |
 | Globe rotation | Drag the globe in the 3D preview (arcball). Stored as a quaternion and shown read-only as lon/lat/roll, with a reset button. |
 | Persistence | localStorage autosave (debounced), plus import/export of a versioned project JSON. Custom polyhedra are embedded in the project file. |
-| Performance | Projection runs in a **web worker from R1**. 110m preview while dragging, full resolution once the drag ends. |
+| Performance | Projection runs in a **web worker from R1**. While dragging, the linework is drawn live on the GPU (shader applies the rotation and radial projection); the exact worker projection replaces it when the drag ends. Shapes with > 64 faces fall back to 110m worker previews. |
 | Testing | Vitest unit tests plus fast-check property tests for all core geometry. |
 | Assembly aids | None in R1. |
 | Timeline | No deadline; hobby pace, milestone-driven. |
@@ -132,13 +134,12 @@ Output per face: `FaceArtwork { outline, layers: { [layerId]: { polylines, polyg
 
 - **Antimeridian and pole seams:** Natural Earth polygons are cut at ±180° (Russia, Fiji, Antarctica), and Antarctica has a degenerate edge at −90°. Stroking polygon outlines would engrave false lines there, so linework always comes from meshes (§4.2).
 - **Clip-boundary edges:** clipping polygons creates new edges along the face boundary. These must never be stroked, or there would be an engraved line just inside every cut.
-- **Gnomonic distortion** grows toward face corners. It is fine on an icosahedron or soccer ball, noticeable on a cube, and severe on a tetrahedron (about 9× areal scale at the corners compared with the centre). The UI shows a per-shape distortion warning.
+- **Gnomonic distortion** grows toward face corners. It is fine on an icosahedron or soccer ball, noticeable on a cube, and severe on a tetrahedron (27× areal and 9× radial scale at the corners compared with the centre; areal scale is (r/d)³). The UI shows a per-shape distortion warning.
 - **Clipped polygons** must stay closed and correctly wound for fill engraving.
 - **Float noise:** keep SVG coordinates in mm, rounded to 0.01 mm (well under laser precision), then remove duplicate points.
 - **Material thickness:** flat panels don't meet at the mathematical edges unless the joint accounts for thickness. Engraving is always projected onto the **outer** surface polygon. With butt joints where the outer faces meet (R1), the outer surface is the true face.
 - **Kerf:** the laser removes about 0.1–0.2 mm. Offset the cut outward by kerf/2 if enabled; never offset engraving.
 - **LightBurn assigns layers by exact stroke colour**, not by SVG groups. Colours must be exact palette values. Inkscape uses `inkscape:groupmode="layer"` groups, and both are emitted.
-- **Data size:** 10m countries and rivers are tens of MB, so simplification is needed.
 - **Disputed borders:** Natural Earth's default point-of-view dataset is used and documented.
 
 ---
@@ -155,7 +156,6 @@ Output per face: `FaceArtwork { outline, layers: { [layerId]: { polylines, polyg
 
 ### 6.2 Map data
 - Bundled: `world-atlas` 110m and 50m (countries and land), plus Natural Earth lakes and rivers at 110m and 50m. All are converted to TopoJSON at build time by `scripts/build-data.ts`.
-- 10m is loaded on demand from the site's own static assets, with a simplification slider.
 - Graticule: generated with `d3.geoGraticule`, configurable interval (default 15°), densified.
 
 ### 6.3 Panel geometry
@@ -190,7 +190,7 @@ Output per face: `FaceArtwork { outline, layers: { [layerId]: { polylines, polyg
   - Drag rotates the map under the solid; right-drag or modifier-drag orbits the camera.
   - Optional face-number overlay.
 - **Right/bottom:** grid of 2D face previews. Click a face to enlarge it and export it on its own.
-- **Warnings:** distortion level, polyhedron validation errors, large output at 10m.
+- **Warnings:** distortion level, polyhedron validation errors, large output.
 
 ### 6.7 Non-goals for R1
 Paper/net mode, glue tabs, fold lines, bevel/frame/finger joints, nested sheets, DXF, text labels, assembly aids, custom GeoJSON layers, mobile/tablet, non-convex shapes.
@@ -207,7 +207,7 @@ Paper/net mode, glue tabs, fold lines, bevel/frame/finger joints, nested sheets,
 | Styling / components | Tailwind CSS + shadcn/ui (Radix primitives), lucide-react icons | shadcn components are copied into `src/ui/components/ui/` via the shadcn CLI. |
 | 3D preview | three + @react-three/fiber + drei | |
 | Geo utilities | d3-geo (graticule, lon/lat helpers), topojson-client (mesh, feature) | |
-| Planar polygons | **clipper2-js** | Robust boolean operations plus offsetting (kerf, and later tabs and fingers). Preferred over `polygon-clipping`, which is largely unmaintained and less robust. |
+| Planar polygons | **clipper2-ts** | Robust boolean operations plus offsetting (kerf, and later tabs and fingers). Preferred over `polygon-clipping`, which is largely unmaintained and less robust. (`clipper2-js` was the original pick but declares Angular as a peer dependency.) |
 | Worker | Web worker + comlink | |
 | Export | Hand-written SVG serialiser, JSZip | |
 | Testing | Vitest + fast-check | |
@@ -272,11 +272,11 @@ tests/                  # vitest unit + fast-check properties
    - land, lakes and ocean fills (spherical Sutherland–Hodgman + Clipper2)
    - rivers and graticule
    - layer table, LightBurn colours, Inkscape groups
-8. **Panel mode:** thickness, kerf offset, dihedral and V-gap info, north-up orientation, 50m/10m resolution switching.
+8. **Panel mode:** thickness, kerf offset, dihedral and V-gap info, north-up orientation, 110m/50m resolution switching.
 9. **Deployment:**
    - public GitHub repo setup
    - GitHub Actions workflow: typecheck, lint, test, build, deploy to GitHub Pages on `main`, gated on tests
-   - Vite `base` path for Pages, and 10m data served as static assets
+   - Vite `base` path for Pages
 10. **Persistence & polish:** autosave, project import/export, warnings, README and maker docs. → **Release 1**
 
 ---
@@ -304,7 +304,7 @@ tests/                  # vitest unit + fast-check properties
   - No visible gaps or overlaps on the truncated icosahedron in the 3D preview.
   - Output looks consistent with d3-geo-polygon `geoIcosahedral` faces.
 - **Performance:**
-  - 3D preview runs at ≥ 30 fps while dragging (110m data).
+  - 3D preview runs at ≥ 30 fps while dragging.
   - A full 50m re-projection of all 32 truncated icosahedron faces takes < 2 s on a typical laptop.
 - **Local:** `npm run dev`, `npm test`, `npm run typecheck`, `npm run lint` and `npm run build` all succeed locally from a fresh clone.
 - **CI (milestone 9):** the same checks pass in GitHub Actions on `main`, and the site deploys to GitHub Pages.
@@ -316,5 +316,52 @@ tests/                  # vitest unit + fast-check properties
 
 - **Butt joint strength:** panels with outer faces meeting touch only along a line. Is a glue fillet sufficient at real sizes, or should the internal frame move earlier?
 - **North-up near poles:** the longest-edge fallback may look inconsistent. Revisit once there is real output.
-- **10m data:** check download size and performance. Cap at 50m if it's unworkable.
+- ~~**10m data:** check download size and performance.~~ Resolved: dropped; 50m is the finest resolution.
 - **LightBurn import quirks:** SVG mm units, group handling and fill import. Verify in milestone 3.
+
+---
+
+## 11. Progress (2026-11-10)
+
+| Milestone | Status |
+|---|---|
+| 1. Scaffold | Done |
+| 2. Core geometry | Done |
+| 3. One face end to end | Done; true scale in Inkscape/LightBurn still to be checked by hand |
+| 4. All faces + worker | Done |
+| 5. Custom polyhedra | Done |
+| 6. 3D preview + globe rotation | Done (live GPU linework while dragging, see §3 Performance) |
+| 7. Polygons & layers | Done |
+| 8. Panel mode | Done (10m dropped) |
+| 9. Deployment | **Deferred** |
+| 10. Persistence & polish | Done |
+
+### Changes from the plan
+
+- **TypeScript ~6.0**, not 7: typescript-eslint supports TypeScript < 6.1, and the plan specifies ESLint.
+- **clipper2-ts** instead of clipper2-js (§7.1).
+- **10m data dropped**: 110m and 50m only. Old project files saved at 10m open at 50m.
+- **Live GPU drag preview** instead of 110m worker re-projection while dragging (§3 Performance).
+- **Clipping tolerance is exactly 0**: neighbouring faces' edge planes are exact negations, so
+  inside/outside tests are complementary and shared-edge cut points are bit-identical.
+- **Seams**: world-atlas coastlines contain antimeridian (±180°) and south-pole edge segments; these
+  are removed from linework (never from the graticule).
+- **Fill layers** in "stroke" mode draw their shoreline arcs (coastline / lake mesh), never the
+  clipped polygon outline (§5 clip-boundary edges). Land fill excludes lakes.
+- **Face orientation** in preprocessing propagates winding across shared edges and fixes the sign
+  by volume, rather than orienting away from the centroid, so non-convex inputs get the right error.
+- **Butt-joint inner gap** reported as 2·t·sin(V/2), where V = 180° − dihedral.
+- **Enlarged face** is a dialog (thumbnail click or double-click in 3D), since the centre panel is
+  the 3D view; it also lists each edge's neighbour, length and dihedral for assembly.
+- **Project files** carry `preset` (rebuilt from code on load) alongside the embedded polyhedron;
+  import is tolerant (invalid fields fall back to defaults with notes).
+
+### Outstanding manual checks (§9)
+
+- SVGs open at true mm scale in Inkscape and LightBurn; LightBurn assigns layers from the default
+  colours, including filled paths.
+- LightBurn palette values 04–29 in `src/core/layers.ts` match LightBurn.
+- ≥ 30 fps while dragging; no visible gaps on the truncated icosahedron; visual comparison with
+  d3-geo-polygon `geoIcosahedral`.
+- CI and Pages deployment (milestone 9).
+

@@ -3,7 +3,7 @@ import { preset } from './polyhedron/presets'
 import type { PolyhedronDef } from './polyhedron/types'
 import { IDENTITY, type Quat } from './quat'
 
-export const RESOLUTIONS = ['110m', '50m', '10m'] as const
+export const RESOLUTIONS = ['110m', '50m'] as const
 export type Resolution = (typeof RESOLUTIONS)[number]
 
 /** Everything that determines the exported files. Grows with later milestones. */
@@ -26,8 +26,6 @@ export interface ProjectSettings {
   /** Kerf compensation (plan §3): off by default so LightBurn's own offset can be used. */
   readonly kerfEnabled: boolean
   readonly kerfMm: number
-  /** Fraction of 1:10m points kept after simplification (plan §6.2), 0–1. */
-  readonly detail10m: number
 }
 
 export const GRATICULE_INTERVALS = [5, 10, 15, 20, 30] as const
@@ -44,5 +42,4 @@ export const DEFAULT_SETTINGS: ProjectSettings = {
   thicknessMm: 3,
   kerfEnabled: false,
   kerfMm: 0.15,
-  detail10m: 0.25,
 }

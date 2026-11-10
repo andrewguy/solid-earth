@@ -134,8 +134,7 @@ export function LiveLines({
   visible: boolean
 }) {
   const invalidate = useThree((s) => s.invalidate)
-  // 1:10m is far too heavy for a drag preview; 1:50m is visually identical at that point.
-  const resolution = useAppStore((s) => (s.resolution === '10m' ? '50m' : s.resolution))
+  const resolution = useAppStore((s) => s.resolution)
   const graticuleDeg = useAppStore((s) => s.graticuleIntervalDeg)
   const segments = useSegments(resolution, graticuleDeg)
 

@@ -190,7 +190,6 @@ export function parseProject(text: string): ParsedProject {
     thicknessMm: num('thicknessMm', (n) => n > 0 && n < 1000, d.thicknessMm),
     kerfEnabled: typeof raw.kerfEnabled === 'boolean' ? raw.kerfEnabled : d.kerfEnabled,
     kerfMm: num('kerfMm', (n) => n >= 0 && n < 5, d.kerfMm),
-    detail10m: num('detail10m', (n) => n >= 0.01 && n <= 1, d.detail10m),
   }
   return { settings, notes }
 }

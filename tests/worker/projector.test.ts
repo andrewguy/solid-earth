@@ -22,9 +22,7 @@ const data = {
   '50m': { land: land50m, countries: countries50m, lakes: lakes50m, rivers: rivers50m },
 } as unknown as Record<'110m' | '50m', MapSources>
 
-/** Bundled test data; 10m is not available in tests. */
-const load: DataLoader = (r) =>
-  r === '10m' ? Promise.reject(new Error('no 10m data in tests')) : Promise.resolve(data[r])
+const load: DataLoader = (r) => Promise.resolve(data[r])
 
 const request = {
   polyhedron: { id: 'icosahedron', def: icosahedron() },
@@ -155,8 +153,8 @@ describe('Projector', () => {
 
   it('retries after a failed data load', async () => {
     let calls = 0
-    const projector = new Projector((r, d) =>
-      ++calls === 1 ? Promise.reject(new Error('offline')) : load(r, d),
+    const projector = new Projector((r) =>
+      ++calls === 1 ? Promise.reject(new Error('offline')) : load(r),
     )
     await expect(projector.project(request)).rejects.toThrow('offline')
     await expect(projector.project(request)).resolves.toBeTruthy()
@@ -175,7 +173,6 @@ describe('ZIP export', () => {
     thicknessMm: 3,
     kerfEnabled: false,
     kerfMm: 0.15,
-    detail10m: 0.25,
   }
 
   it('contains every face SVG plus a versioned project.json', async () => {

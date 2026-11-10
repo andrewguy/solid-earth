@@ -27,7 +27,6 @@ const custom: ProjectSettings = {
   thicknessMm: 6,
   kerfEnabled: true,
   kerfMm: 0.2,
-  detail10m: 0.4,
 }
 
 const raw = (o: object) =>
@@ -94,6 +93,14 @@ describe('project files', () => {
     })
     expect(notes.join(' ')).toMatch(/edgeLengthMm.*resolution|resolution.*edgeLengthMm/s)
     expect(notes.some((n) => n.includes('#123456') && n.includes('LightBurn'))).toBe(true)
+  })
+
+  it('opens projects saved with the retired 1:10m option at 1:50m', () => {
+    const { settings, notes } = parseProject(
+      raw({ preset: 'cube', resolution: '10m', detail10m: 0.3 }),
+    )
+    expect(settings.resolution).toBe('50m')
+    expect(notes).toEqual(['unknown resolution 10m; using 50m'])
   })
 
   it('accepts lower-case palette colours', () => {

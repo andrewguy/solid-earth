@@ -31,6 +31,3 @@ dist-ssr
 
 # Downloaded raw data (build-data cache)
 .cache/
-
-# Generated 1:10m data (large; run `npm run build:data`)
-public/data/

@@ -20,8 +20,7 @@ settings, kerf, and assembly.
   back into flat faces).
 - **Map layers:** coastlines, country borders, rivers, lakes, land and ocean fills, graticule.
   Each layer has its own on/off switch, mode (fill, shore line or both) and LightBurn colour.
-- **Data:** Natural Earth at 1:110m, 1:50m (bundled) and 1:10m (on demand, with a detail
-  control).
+- **Data:** Natural Earth at 1:110m and 1:50m, bundled with the app.
 - **3D preview:** drag to rotate the globe under the solid; panels are textured with exactly what
   gets exported.
 - **Laser-ready SVGs:** true mm scale, north-up panels, Inkscape layers, exact LightBurn palette
@@ -84,11 +83,6 @@ tests/        Vitest unit tests and fast-check property tests
   [world-atlas](https://github.com/topojson/world-atlas) npm package.
 - `lakes-*.topo.json`, `rivers-*.topo.json`: Natural Earth GeoJSON at a pinned tag, downloaded
   (cached in `.cache/`), ring winding normalised to the d3 convention, and converted to TopoJSON.
-
-1:110m and 1:50m are bundled. 1:10m is large, so it is written to `public/data/` instead and
-served as static files that the app fetches only when you pick 1:10m. `public/data/` is not
-committed: run `npm run build:data` once (it downloads Natural Earth 10m lakes and rivers) or the
-1:10m option will report that the data is missing.
 
 `npm run build:data -- --skip-natural-earth` rebuilds only the world-atlas files (no network).
 

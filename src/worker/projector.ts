@@ -42,11 +42,8 @@ export interface MapSources {
   readonly rivers: RiversTopology
 }
 
-/**
- * Loads raw TopoJSON. `detail` (0–1, 10m only) is passed through so loaders may simplify;
- * the bundled loader does (see bundled-data.ts).
- */
-export type DataLoader = (resolution: Resolution, detail: number) => Promise<MapSources>
+/** Loads the raw TopoJSON for a resolution. */
+export type DataLoader = (resolution: Resolution) => Promise<MapSources>
 
 export interface ProjectRequest {
   /** `id` identifies the shape for caching; `def` must already be preprocessed. */
@@ -58,8 +55,6 @@ export interface ProjectRequest {
   readonly graticuleIntervalDeg: number
   /** Kerf in mm applied to the cut path; 0 = off. */
   readonly kerfMm?: number
-  /** Fraction of points kept at 1:10m (ignored at other resolutions). Default 1. */
-  readonly detail10m?: number
   /**
    * false for interactive previews (dragging): skip SVG serialisation and rounding, and only
    * return packed artwork for the 3D textures. Default true.
@@ -111,7 +106,7 @@ export interface LineSegments3D {
  * so layer-style changes that need no new fills only re-serialise SVG.
  */
 export class Projector {
-  private readonly prepared = new Map<string, Promise<PreparedMap>>()
+  private readonly prepared = new Map<Resolution, Promise<PreparedMap>>()
   private readonly graticules = new Map<number, PreparedLine[]>()
   private frames: { id: string; frames: PolyhedronFrames } | null = null
   private lastArt: { key: string; arts: FaceArtwork[] } | null = null
@@ -121,15 +116,10 @@ export class Projector {
     this.load = load
   }
 
-  private preparedMap(resolution: Resolution, detail: number): Promise<PreparedMap> {
-    const key = resolution === '10m' ? `10m:${detail}` : resolution
-    let p = this.prepared.get(key)
+  private preparedMap(resolution: Resolution): Promise<PreparedMap> {
+    let p = this.prepared.get(resolution)
     if (!p) {
-      // Keep one simplified 10m variant at a time; they are large.
-      if (resolution === '10m') {
-        for (const k of this.prepared.keys()) if (k.startsWith('10m:')) this.prepared.delete(k)
-      }
-      p = this.load(resolution, detail).then(({ land, countries, lakes, rivers }) =>
+      p = this.load(resolution).then(({ land, countries, lakes, rivers }) =>
         prepareMap(
           {
             coastlines: prepareLines(coastlineLines(land)),
@@ -144,8 +134,8 @@ export class Projector {
         ),
       )
       // Don't cache failures: allow a retry.
-      p.catch(() => this.prepared.delete(key))
-      this.prepared.set(key, p)
+      p.catch(() => this.prepared.delete(resolution))
+      this.prepared.set(resolution, p)
     }
     return p
   }
@@ -161,12 +151,8 @@ export class Projector {
   }
 
   /** Prepared data for a resolution plus the graticule. */
-  private async mapFor(
-    resolution: Resolution,
-    graticuleDeg: number,
-    detail = 1,
-  ): Promise<PreparedMap> {
-    const base = await this.preparedMap(resolution, detail)
+  private async mapFor(resolution: Resolution, graticuleDeg: number): Promise<PreparedMap> {
+    const base = await this.preparedMap(resolution)
     return { ...base, lines: { ...base.lines, graticule: this.graticule(graticuleDeg) } }
   }
 
@@ -201,7 +187,6 @@ export class Projector {
     const mmPerUnit = req.edgeLengthMm / longestEdge(frames)
     const fills = fillsNeeded(req.layerStyles)
     const kerfMm = req.kerfMm ?? 0
-    const detail = req.resolution === '10m' ? (req.detail10m ?? 1) : 1
     const key = JSON.stringify([
       req.polyhedron.id,
       req.resolution,
@@ -211,14 +196,13 @@ export class Projector {
       fills,
       req.graticuleIntervalDeg,
       kerfMm,
-      detail,
     ])
     let prepareMs = 0
     let projectMs = 0
     let arts = this.lastArt?.key === key ? this.lastArt.arts : null
     if (!arts) {
       const t0 = performance.now()
-      const map = await this.mapFor(req.resolution, req.graticuleIntervalDeg, detail)
+      const map = await this.mapFor(req.resolution, req.graticuleIntervalDeg)
       const t1 = performance.now()
       arts = buildAllFaces(frames, rotateMap(map, req.rotation), {
         mmPerUnit,

@@ -24,7 +24,6 @@ import {
   SelectValue,
 } from '@/ui/components/ui/select'
 import { Separator } from '@/ui/components/ui/separator'
-import { Slider } from '@/ui/components/ui/slider'
 import { Switch } from '@/ui/components/ui/switch'
 import { LayerTable } from '@/ui/layout/LayerTable'
 import { ProjectToolbar } from '@/ui/layout/ProjectToolbar'
@@ -45,34 +44,6 @@ function circumDiameterMm(def: PolyhedronDef, edgeMm: number): number {
     })
   const radius = Math.max(...def.vertices.map(length))
   return (2 * radius * edgeMm) / longest
-}
-
-/** Simplification control for 1:10m (plan §6.2). Commits on release: re-simplifying is slow. */
-function DetailSlider() {
-  const detail = useAppStore((s) => s.detail10m)
-  const setDetail = useAppStore((s) => s.setDetail10m)
-  const [draft, setDraft] = useState<number | null>(null)
-  const shown = draft ?? detail
-  return (
-    <div className="space-y-2">
-      <Label className="text-xs">Detail kept: {Math.round(shown * 100)}% of points</Label>
-      <Slider
-        min={5}
-        max={100}
-        step={5}
-        value={[Math.round(shown * 100)]}
-        onValueChange={([v]) => v !== undefined && setDraft(v / 100)}
-        onValueCommit={([v]) => {
-          if (v !== undefined) setDetail(v / 100)
-          setDraft(null)
-        }}
-      />
-      <p className="text-xs text-muted-foreground">
-        Full 1:10m detail is finer than a laser can engrave on most panels and slows everything
-        down; 15–30% is usually plenty.
-      </p>
-    </div>
-  )
 }
 
 /** Dihedral angles and butt-joint V-gaps (plan §6.3). */
@@ -345,10 +316,8 @@ export function LeftPanel() {
               <SelectContent>
                 <SelectItem value="110m">1:110m (coarse)</SelectItem>
                 <SelectItem value="50m">1:50m (medium)</SelectItem>
-                <SelectItem value="10m">1:10m (fine, large download)</SelectItem>
               </SelectContent>
             </Select>
-            {resolution === '10m' && <DetailSlider />}
           </Section>
 
           <Section title="Panel geometry">

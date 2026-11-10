@@ -54,7 +54,6 @@ function fromSettings(s: ProjectSettings) {
     thicknessMm: s.thicknessMm,
     kerfEnabled: s.kerfEnabled,
     kerfMm: s.kerfMm,
-    detail10m: s.detail10m,
   }
 }
 
@@ -71,7 +70,6 @@ interface AppState {
   thicknessMm: number
   kerfEnabled: boolean
   kerfMm: number
-  detail10m: number
   // UI / derived
   selectedFace: number
   /** Face shown enlarged in the dialog, or null. */
@@ -104,7 +102,6 @@ interface AppState {
   setThicknessMm: (mm: number) => void
   setKerfEnabled: (on: boolean) => void
   setKerfMm: (mm: number) => void
-  setDetail10m: (fraction: number) => void
   setComputing: () => void
   setProjection: (p: Omit<Projection, 'faces'> & { svgs: readonly string[] }) => void
   setError: (message: string) => void
@@ -164,7 +161,6 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setKerfMm: (mm) => {
     if (Number.isFinite(mm) && mm >= 0 && mm < 5) set({ kerfMm: mm })
   },
-  setDetail10m: (fraction) => set({ detail10m: Math.min(1, Math.max(0.01, fraction)) }),
   setComputing: () => set({ computing: true }),
   setProjection: ({ svgs, ...rest }) => {
     for (const f of get().projection?.faces ?? []) URL.revokeObjectURL(f.url)
@@ -189,5 +185,4 @@ export const selectSettings = (s: AppState): ProjectSettings => ({
   thicknessMm: s.thicknessMm,
   kerfEnabled: s.kerfEnabled,
   kerfMm: s.kerfMm,
-  detail10m: s.detail10m,
 })

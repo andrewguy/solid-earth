@@ -60,10 +60,8 @@ Fill layers never draw lines along the panel edges: "shore line" always follows 
 coastline. The graticule (latitude/longitude grid) defaults to 15° and can be set to 5–30° in
 its colour menu.
 
-_Map data_ sets the level of detail. 1:50m suits most panels. 1:10m is much finer and a large
-download; keep its _detail_ slider around 15–30%, since full 1:10m detail is finer than a laser
-can engrave on typical panel sizes and makes LightBurn slow. The app warns when the output gets
-large.
+_Map data_ sets the level of detail. 1:50m suits most panels; 1:110m is coarser and lighter. The
+app warns when the output gets large enough to slow LightBurn down.
 
 ## 5. LightBurn set-up
 
@@ -132,8 +130,6 @@ Because the panels only touch along a line, the strength comes from glue in the 
   are in mm (`width="…mm"`).
 - **Wrong layers in LightBurn:** layer colours must be exact palette values. Keep the defaults,
   or pick from the app's palette, which only offers LightBurn colours.
-- **1:10m says data is missing:** the 10m files aren't bundled; run `npm run build:data` (or use
-  the hosted site).
 - **An imported shape is rejected:** it must be a closed, convex solid. The message names the
   vertex or face at fault.
 - **Something looks off after an update:** _New project_ resets everything to defaults.

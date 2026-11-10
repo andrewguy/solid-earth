@@ -34,8 +34,8 @@ export function Warnings() {
       title: 'Large output',
       body:
         `The SVGs total ${mb(bytes)} MB. LightBurn may be slow to import and plan the job. ` +
-        (resolution === '10m'
-          ? 'Reduce the 1:10m detail, or use 1:50m.'
+        (resolution === '50m'
+          ? 'Try 1:110m, or turn off rivers or fills.'
           : 'Consider turning off rivers or fills.'),
     })
   }
