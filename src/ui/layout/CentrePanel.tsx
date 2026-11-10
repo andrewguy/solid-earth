@@ -18,7 +18,7 @@ export function CentrePanel() {
   const setShowFaceNumbers = useAppStore((s) => s.setShowFaceNumbers)
 
   return (
-    <main className="flex min-h-0 flex-col bg-muted/30">
+    <main className="flex min-h-0 min-w-0 flex-col bg-muted/30">
       <header className="flex items-center justify-between gap-4 border-b bg-background px-4 py-2">
         <p className="text-xs text-muted-foreground">
           Drag: rotate globe · Right- or Alt-drag: orbit · Wheel: zoom · Double-click a face:
@@ -41,7 +41,7 @@ export function CentrePanel() {
           />
         </div>
       </header>
-      <div className="relative min-h-0 flex-1">
+      <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
         {error ? (
           <p className="p-6 text-sm text-destructive">Projection failed: {error}</p>
         ) : (

@@ -24,7 +24,7 @@ export default function App({ startupNotes = [] }: { startupNotes?: readonly str
   return (
     <TooltipProvider>
       <ProjectionSync />
-      <div className="grid h-screen grid-cols-[24rem_1fr_20rem] bg-background text-foreground">
+      <div className="grid h-screen grid-cols-[24rem_minmax(0,1fr)_20rem] grid-rows-[minmax(0,1fr)] overflow-hidden bg-background text-foreground">
         <LeftPanel />
         <CentrePanel />
         <FacesPanel />

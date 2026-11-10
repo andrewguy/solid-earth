@@ -34,7 +34,7 @@ export function FacesPanel() {
   }
 
   return (
-    <aside className="flex min-h-0 flex-col border-l">
+    <aside className="flex min-h-0 min-w-0 flex-col border-l">
       <header className="flex items-center justify-between px-4 py-2">
         <div>
           <h2 className="text-sm font-medium">Faces</h2>

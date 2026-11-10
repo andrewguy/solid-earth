@@ -266,7 +266,7 @@ export function LeftPanel() {
   const setKerfMm = useAppStore((s) => s.setKerfMm)
 
   return (
-    <aside className="flex min-h-0 flex-col border-r">
+    <aside className="flex min-h-0 min-w-0 flex-col border-r">
       <header className="flex items-center justify-between gap-2 py-2 pr-2 pl-4">
         <h1 className="text-sm font-semibold">Solid Earth</h1>
         <ProjectToolbar />
