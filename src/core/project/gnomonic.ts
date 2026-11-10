@@ -20,3 +20,15 @@ export function gnomonic(face: FaceFrame, p: Vec3): Vec2 | null {
 export function inverseGnomonic(face: FaceFrame, xy: Vec2): Vec3 {
   return normalize(planePoint(face, xy))
 }
+
+/**
+ * Where direction `p` meets the surface of a convex solid: scaled out along its ray to the
+ * first face plane it reaches, i.e. by 1 / max(p·n / d). Equals `planePoint(face,
+ * gnomonic(face, p))` for the face whose cone contains p. The live GPU preview's vertex shader
+ * (ui/three/LiveLines.tsx) implements exactly this.
+ */
+export function surfacePoint(faces: readonly FaceFrame[], p: Vec3): Vec3 {
+  let m = 0
+  for (const f of faces) m = Math.max(m, dot(p, f.normal) / f.distance)
+  return [p[0] / m, p[1] / m, p[2] / m]
+}

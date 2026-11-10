@@ -94,6 +94,19 @@ describe('Projector', () => {
     expect(transferables(preview).length).toBeGreaterThan(20)
   })
 
+  it('provides unit-vector line segments for the live GPU preview', async () => {
+    const projector = new Projector((r) => Promise.resolve(data[r]))
+    const { layers } = await projector.lineSegments('110m')
+    for (const id of ['coastlines', 'borders'] as const) {
+      const a = layers[id]!
+      expect(a.length % 6).toBe(0)
+      expect(a.length).toBeGreaterThan(6000)
+      for (let i = 0; i < a.length; i += 3) {
+        expect(Math.hypot(a[i]!, a[i + 1]!, a[i + 2]!)).toBeCloseTo(1, 5)
+      }
+    }
+  })
+
   it('retries after a failed data load', async () => {
     let calls = 0
     const projector = new Projector((r) =>

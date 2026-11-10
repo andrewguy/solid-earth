@@ -4,12 +4,12 @@ import { CentrePanel } from '@/ui/layout/CentrePanel'
 import { FaceDialog } from '@/ui/layout/FaceDialog'
 import { FacesPanel } from '@/ui/layout/FacesPanel'
 import { LeftPanel } from '@/ui/layout/LeftPanel'
-import { useProjectionSync } from '@/ui/useProjectionSync'
+import { ProjectionSync } from '@/ui/useProjectionSync'
 
 export default function App() {
-  useProjectionSync()
   return (
     <TooltipProvider>
+      <ProjectionSync />
       <div className="grid h-screen grid-cols-[18rem_1fr_20rem] bg-background text-foreground">
         <LeftPanel />
         <CentrePanel />

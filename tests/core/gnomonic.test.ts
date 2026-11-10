@@ -2,12 +2,12 @@ import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 
 import { type FaceFrame, buildFrames, planePoint } from '@/core/polyhedron/faces'
-import { icosahedron } from '@/core/polyhedron/presets'
-import { gnomonic, inverseGnomonic } from '@/core/project/gnomonic'
+import { PRESET_IDS, icosahedron, preset } from '@/core/polyhedron/presets'
+import { gnomonic, inverseGnomonic, surfacePoint } from '@/core/project/gnomonic'
 import { conjugate, rotate } from '@/core/quat'
-import { type Vec2, type Vec3, cross, length, lerp, negate, normalize, sub } from '@/core/vec3'
+import { type Vec2, type Vec3, cross, dot, length, lerp, negate, normalize, sub } from '@/core/vec3'
 
-import { rotation, vecCloseTo } from '../arbitraries'
+import { rotation, unitVec3, vecCloseTo } from '../arbitraries'
 
 const frames = buildFrames(icosahedron())
 const faceIndex = fc.integer({ min: 0, max: frames.faces.length - 1 })
@@ -119,6 +119,18 @@ describe('gnomonic projection', () => {
           return Math.abs(crossZ) < 1e-12
         },
       ),
+    )
+  })
+})
+
+describe('surfacePoint (the live GPU preview formula)', () => {
+  it.each(PRESET_IDS)('%s: matches gnomonic projection onto the containing face', (id) => {
+    const fr = buildFrames(preset(id))
+    fc.assert(
+      fc.property(unitVec3, (p) => {
+        const face = fr.faces.find((f) => f.edgePlanes.every((n) => dot(n, p) >= 0))!
+        return vecCloseTo(surfacePoint(fr.faces, p), planePoint(face, gnomonic(face, p)!), 1e-9)
+      }),
     )
   })
 })

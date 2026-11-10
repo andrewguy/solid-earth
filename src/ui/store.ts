@@ -23,6 +23,8 @@ export interface Projection {
 /** Projected linework for the 3D textures (updated live while dragging). */
 export interface Artwork {
   readonly shapeId: string
+  /** The rotation this artwork was projected with (same object as the store's, if current). */
+  readonly rotation: Quat
   readonly mmPerUnit: number
   readonly faces: readonly PackedFace[]
 }

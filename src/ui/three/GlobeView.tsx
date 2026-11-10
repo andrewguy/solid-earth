@@ -4,14 +4,15 @@ import { BufferGeometry, Float32BufferAttribute } from 'three'
 
 import { type PolyhedronFrames, buildFrames } from '@/core/polyhedron/faces'
 import { length } from '@/core/vec3'
+import { MAX_LIVE_FACES } from '@/ui/constants'
 import { useAppStore } from '@/ui/store'
 
 import { Controls } from './Controls'
 import { FaceMesh } from './FaceMesh'
+import { LiveLines } from './LiveLines'
 
-/** Texture resolution: lighter while dragging, crisper at rest. */
-const PREVIEW_PX = 512
-const FULL_PX = 1024
+/** Texture resolution (longest side, px). */
+const TEXTURE_PX = 1024
 
 function Edges({ frames }: { frames: PolyhedronFrames }) {
   const geometry = useMemo(() => {
@@ -50,7 +51,12 @@ function Solid() {
   const polyhedron = useAppStore((s) => s.polyhedron)
   const artwork = useAppStore((s) => s.artwork)
   const styles = useAppStore((s) => s.layerStyles)
-  const dragging = useAppStore((s) => s.dragging)
+  // Textures are stale while dragging, or until the worker catches up with the rotation.
+  // (A boolean selector, so this component doesn't re-render on every pointer move.)
+  const texturesStale = useAppStore(
+    (s) =>
+      s.dragging || s.artwork?.rotation !== s.rotation || s.artwork.shapeId !== s.polyhedron.id,
+  )
   const selected = useAppStore((s) => s.selectedFace)
   const showNumbers = useAppStore((s) => s.showFaceNumbers)
   const selectFace = useAppStore((s) => s.selectFace)
@@ -60,6 +66,8 @@ function Solid() {
   const radius = useMemo(() => Math.max(...polyhedron.def.vertices.map(length)), [polyhedron])
   // Ignore artwork computed for a different shape (e.g. just after switching).
   const current = artwork?.shapeId === polyhedron.id ? artwork : null
+  // Shapes the GPU preview can't handle keep showing (worker-updated) textures throughout.
+  const live = frames.faces.length <= MAX_LIVE_FACES && texturesStale
 
   return (
     <>
@@ -72,13 +80,15 @@ function Solid() {
           packed={current?.faces[face.index]}
           mmPerUnit={current?.mmPerUnit ?? 1}
           styles={styles}
-          maxPx={dragging ? PREVIEW_PX : FULL_PX}
+          maxPx={TEXTURE_PX}
+          showArtwork={!live}
           selected={face.index === selected}
           showNumber={showNumbers}
           onSelect={() => selectFace(face.index)}
           onOpen={() => enlargeFace(face.index)}
         />
       ))}
+      <LiveLines frames={frames} styles={styles} visible={live} />
       <Edges frames={frames} />
     </>
   )

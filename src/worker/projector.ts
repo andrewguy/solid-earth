@@ -9,6 +9,7 @@ import {
 import type { LayerId, LayerStyle, LineLayerId } from '@/core/layers'
 import {
   type FaceArtwork,
+  type PreparedLine,
   type PreparedMap,
   buildAllFaces,
   longestEdge,
@@ -104,6 +105,25 @@ export class Projector {
     return this.frames.frames
   }
 
+  async lineSegments(resolution: Resolution): Promise<LineSegments3D> {
+    const map = await this.preparedMap(resolution)
+    const layers: Partial<Record<LineLayerId, Float32Array>> = {}
+    for (const [id, lines] of Object.entries(map.lines) as [LineLayerId, PreparedLine[]][]) {
+      const segments = lines.reduce((n, l) => n + Math.max(0, l.points.length - 1), 0)
+      const out = new Float32Array(segments * 6)
+      let k = 0
+      for (const { points } of lines) {
+        for (let i = 0; i + 1 < points.length; i++) {
+          out.set(points[i]!, k)
+          out.set(points[i + 1]!, k + 3)
+          k += 6
+        }
+      }
+      layers[id] = out
+    }
+    return { layers }
+  }
+
   async project(req: ProjectRequest): Promise<ProjectResult> {
     const frames = this.framesFor(req.polyhedron)
     const wantSvg = req.wantSvg ?? true
@@ -139,6 +159,14 @@ export class Projector {
       projectMs,
     }
   }
+}
+
+/**
+ * Unit-vector line segments for the live GPU preview: xyz pairs (each segment = 2 vertices),
+ * unrotated. Sent once per resolution; the 3D view rotates and projects them in a shader.
+ */
+export interface LineSegments3D {
+  readonly layers: Partial<Record<LineLayerId, Float32Array>>
 }
 
 /** Flatten a face's polylines into typed arrays. Always fresh: the buffers get transferred. */

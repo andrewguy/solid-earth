@@ -5,7 +5,7 @@ import type { FaceFrame } from '@/core/polyhedron/faces'
 import type { PackedFace } from '@/worker/projector'
 
 /** Paper/plywood-ish panel colour for the preview. */
-const PANEL_COLOR = '#f3ece0'
+export const PANEL_COLOR = '#f3ece0'
 const LINE_LAYERS: readonly LineLayerId[] = ['coastlines', 'borders']
 
 /** Face bounds in plane coordinates (model units), used for both UVs and canvas mapping. */

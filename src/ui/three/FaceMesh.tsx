@@ -7,7 +7,7 @@ import type { LayerId, LayerStyle } from '@/core/layers'
 import type { FaceFrame } from '@/core/polyhedron/faces'
 import type { PackedFace } from '@/worker/projector'
 
-import { FaceCanvasTexture, faceUv } from './texture'
+import { FaceCanvasTexture, PANEL_COLOR, faceUv } from './texture'
 
 /** Planar face as a triangle fan, with UVs over the face's bounding box. */
 function faceGeometry(face: FaceFrame): BufferGeometry {
@@ -30,6 +30,8 @@ interface FaceMeshProps {
   styles: Readonly<Record<LayerId, LayerStyle>>
   /** Longest texture side in pixels. */
   maxPx: number
+  /** false: plain panel (the live GPU lines are showing instead of a stale texture). */
+  showArtwork: boolean
   selected: boolean
   showNumber: boolean
   onSelect: () => void
@@ -42,6 +44,7 @@ export function FaceMesh({
   mmPerUnit,
   styles,
   maxPx,
+  showArtwork,
   selected,
   showNumber,
   onSelect,
@@ -83,13 +86,25 @@ export function FaceMesh({
 
   return (
     <mesh geometry={geometry} onClick={click} onDoubleClick={onOpen}>
-      <meshLambertMaterial
-        map={faceTexture.texture}
-        color={selected ? '#bcd7ff' : '#ffffff'}
-        polygonOffset
-        polygonOffsetFactor={1}
-        polygonOffsetUnits={1}
-      />
+      {/* Two materials rather than toggling `map`, which would force a shader rebuild. */}
+      {showArtwork ? (
+        <meshLambertMaterial
+          key="textured"
+          map={faceTexture.texture}
+          color={selected ? '#bcd7ff' : '#ffffff'}
+          polygonOffset
+          polygonOffsetFactor={1}
+          polygonOffsetUnits={1}
+        />
+      ) : (
+        <meshLambertMaterial
+          key="plain"
+          color={selected ? '#b4c6dd' : PANEL_COLOR}
+          polygonOffset
+          polygonOffsetFactor={1}
+          polygonOffsetUnits={1}
+        />
+      )}
       {showNumber && (
         <Html position={centre.clone().multiplyScalar(1.001)} center zIndexRange={[10, 0]}>
           <span

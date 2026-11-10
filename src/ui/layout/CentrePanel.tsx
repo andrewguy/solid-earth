@@ -28,7 +28,7 @@ export function CentrePanel() {
           {(computing || dragging) && (
             <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <LoaderCircle className="size-3.5 animate-spin" />
-              {dragging ? 'Preview (1:110m)' : 'Projecting…'}
+              {dragging ? 'Live preview' : 'Projecting…'}
             </span>
           )}
           <Label htmlFor="face-numbers" className="text-xs">

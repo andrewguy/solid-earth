@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 
+import { MAX_LIVE_FACES } from '@/ui/constants'
 import { projector } from '@/ui/projector-client'
 import { useAppStore } from '@/ui/store'
 
@@ -10,9 +11,10 @@ const DEBOUNCE_MS = 120
  *
  * - Settings change (not dragging): debounced full render at the chosen resolution, with SVGs
  *   for the 2D grid and exports, plus artwork for the 3D textures.
- * - Dragging the globe: a 110m, artwork-only preview loop with at most one request in flight;
- *   whenever one returns, the newest rotation is sent next. The 3D view keeps rendering at full
- *   frame rate while textures catch up.
+ * - Dragging the globe: the 3D view draws the linework live on the GPU, so no worker requests
+ *   are needed. Only shapes with more than MAX_LIVE_FACES faces fall back to a 110m,
+ *   artwork-only preview loop (at most one request in flight, newest rotation wins).
+ * - Releasing a drag renders immediately (no debounce).
  *
  * Both paths share one request counter, so a late result from either is discarded.
  */
@@ -24,6 +26,7 @@ export function useProjectionSync(): void {
   const layerStyles = useAppStore((s) => s.layerStyles)
   const dragging = useAppStore((s) => s.dragging)
   const latest = useRef(0)
+  const wasDragging = useRef(false)
 
   // Starting a drag invalidates any full render still in flight.
   useEffect(() => {
@@ -32,27 +35,32 @@ export function useProjectionSync(): void {
 
   // Full render.
   useEffect(() => {
+    const justReleased = wasDragging.current && !dragging
+    wasDragging.current = dragging
     if (dragging) return
     const id = ++latest.current
     const { setComputing, setProjection, setArtwork, setError } = useAppStore.getState()
     setComputing()
-    const timer = setTimeout(() => {
-      projector()
-        .project({ polyhedron, resolution, edgeLengthMm, rotation, layerStyles })
-        .then((r) => {
-          if (id !== latest.current) return
-          setArtwork({ shapeId: r.shapeId, mmPerUnit: r.mmPerUnit, faces: r.faces })
-          setProjection({
-            shape: r.shape,
-            svgs: r.svgs ?? [],
-            prepareMs: r.prepareMs,
-            projectMs: r.projectMs,
+    const timer = setTimeout(
+      () => {
+        projector()
+          .project({ polyhedron, resolution, edgeLengthMm, rotation, layerStyles })
+          .then((r) => {
+            if (id !== latest.current) return
+            setArtwork({ shapeId: r.shapeId, rotation, mmPerUnit: r.mmPerUnit, faces: r.faces })
+            setProjection({
+              shape: r.shape,
+              svgs: r.svgs ?? [],
+              prepareMs: r.prepareMs,
+              projectMs: r.projectMs,
+            })
           })
-        })
-        .catch((err: unknown) => {
-          if (id === latest.current) setError(err instanceof Error ? err.message : String(err))
-        })
-    }, DEBOUNCE_MS)
+          .catch((err: unknown) => {
+            if (id === latest.current) setError(err instanceof Error ? err.message : String(err))
+          })
+      },
+      justReleased ? 0 : DEBOUNCE_MS,
+    )
     return () => clearTimeout(timer)
   }, [polyhedron, resolution, edgeLengthMm, rotation, layerStyles, dragging])
 
@@ -63,15 +71,17 @@ export function useProjectionSync(): void {
     const pump = () => {
       const s = useAppStore.getState()
       if (!s.dragging || inFlight || s.rotation === sent) return
+      if (s.polyhedron.def.faces.length <= MAX_LIVE_FACES) return // drawn live on the GPU
       inFlight = true
       sent = s.rotation
       const id = ++latest.current
+      const rotation = s.rotation
       projector()
         .project({
           polyhedron: s.polyhedron,
           resolution: '110m',
           edgeLengthMm: s.edgeLengthMm,
-          rotation: s.rotation,
+          rotation,
           layerStyles: s.layerStyles,
           wantSvg: false,
         })
@@ -79,7 +89,7 @@ export function useProjectionSync(): void {
           if (id === latest.current && useAppStore.getState().dragging) {
             useAppStore
               .getState()
-              .setArtwork({ shapeId: r.shapeId, mmPerUnit: r.mmPerUnit, faces: r.faces })
+              .setArtwork({ shapeId: r.shapeId, rotation, mmPerUnit: r.mmPerUnit, faces: r.faces })
           }
         })
         .catch(() => {
@@ -92,4 +102,10 @@ export function useProjectionSync(): void {
     }
     return useAppStore.subscribe(pump)
   }, [])
+}
+
+/** Runs the sync in its own component, so rotation changes don't re-render the whole app. */
+export function ProjectionSync(): null {
+  useProjectionSync()
+  return null
 }
