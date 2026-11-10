@@ -33,11 +33,28 @@ export function faceUv(face: FaceFrame, [x, y]: readonly [number, number]): [num
   return [(x - minX) / width, (y - minY) / height]
 }
 
-/** Canvas pixel size for a face: longest side = `maxPx`, aspect preserved. */
-export function canvasSize(face: FaceFrame, maxPx: number): [number, number] {
+/**
+ * Texture density shared by every face of a solid (pixels per model unit): the largest face
+ * gets `maxPx` on its longest side and smaller faces proportionally fewer. A common density
+ * keeps line widths physically equal on faces of different sizes (e.g. a truncated cube's
+ * triangles and octagons).
+ */
+export function texturePxPerUnit(faces: readonly FaceFrame[], maxPx: number): number {
+  let extent = 0
+  for (const f of faces) {
+    const { width, height } = faceBounds(f)
+    extent = Math.max(extent, width, height)
+  }
+  return maxPx / extent
+}
+
+/** Base preview line width in pixels for textures drawn at `maxPx` for the largest face. */
+export const baseLinePx = (maxPx: number) => Math.max(1, maxPx / 500)
+
+/** Canvas pixel size for a face at `pxPerUnit`, aspect preserved. */
+export function canvasSize(face: FaceFrame, pxPerUnit: number): [number, number] {
   const { width, height } = faceBounds(face)
-  const k = maxPx / Math.max(width, height)
-  return [Math.max(1, Math.round(width * k)), Math.max(1, Math.round(height * k))]
+  return [Math.max(1, Math.round(width * pxPerUnit)), Math.max(1, Math.round(height * pxPerUnit))]
 }
 
 /**
@@ -52,6 +69,8 @@ export function drawFaceTexture(
   packed: PackedFace | undefined,
   mmPerUnit: number,
   styles: Readonly<Record<LayerId, LayerStyle>>,
+  /** Line width in pixels at preview width 1×; the same for every face of a solid. */
+  linePx: number,
 ): void {
   const { width: W, height: H } = ctx.canvas
   const { minX, minY, width, height } = faceBounds(face)
@@ -81,13 +100,12 @@ export function drawFaceTexture(
       if (closed) ctx.closePath()
     }
   }
-  const baseWidth = Math.max(1, Math.max(W, H) / 500)
   const stroke = (source: LineSourceId, style: LayerStyle) => {
     const layer = packed.lines[source]
     if (!layer) return
     trace(layer, false)
     ctx.strokeStyle = style.color
-    ctx.lineWidth = baseWidth * style.previewWidth
+    ctx.lineWidth = linePx * style.previewWidth
     ctx.stroke()
   }
 
@@ -121,16 +139,17 @@ export class FaceCanvasTexture {
     this.texture.colorSpace = SRGBColorSpace
   }
 
-  /** Redraw at `maxPx` (longest side) and flag the texture for upload. */
+  /** Redraw at the solid's shared texture density and flag the texture for upload. */
   update(
     face: FaceFrame,
     packed: PackedFace | undefined,
     mmPerUnit: number,
     styles: Readonly<Record<LayerId, LayerStyle>>,
-    maxPx: number,
+    pxPerUnit: number,
+    linePx: number,
     anisotropy: number,
   ): void {
-    const [w, h] = canvasSize(face, maxPx)
+    const [w, h] = canvasSize(face, pxPerUnit)
     if (this.canvas.width !== w || this.canvas.height !== h) {
       this.canvas.width = w
       this.canvas.height = h
@@ -138,7 +157,7 @@ export class FaceCanvasTexture {
     }
     const ctx = this.canvas.getContext('2d')
     if (!ctx) return
-    drawFaceTexture(ctx, face, packed, mmPerUnit, styles)
+    drawFaceTexture(ctx, face, packed, mmPerUnit, styles, linePx)
     this.texture.anisotropy = anisotropy
     this.texture.needsUpdate = true
   }

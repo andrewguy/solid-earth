@@ -10,9 +10,11 @@ import { useAppStore } from '@/ui/store'
 import { Controls } from './Controls'
 import { FaceMesh } from './FaceMesh'
 import { LiveLines } from './LiveLines'
+import { baseLinePx, texturePxPerUnit } from './texture'
 
-/** Texture resolution (longest side, px). */
+/** Texture resolution for the largest face (longest side, px); smaller faces scale down. */
 const TEXTURE_PX = 1024
+const LINE_PX = baseLinePx(TEXTURE_PX)
 
 function Edges({ frames }: { frames: PolyhedronFrames }) {
   const geometry = useMemo(() => {
@@ -64,6 +66,7 @@ function Solid() {
 
   const frames = useMemo(() => buildFrames(polyhedron.def), [polyhedron])
   const radius = useMemo(() => Math.max(...polyhedron.def.vertices.map(length)), [polyhedron])
+  const pxPerUnit = useMemo(() => texturePxPerUnit(frames.faces, TEXTURE_PX), [frames])
   // Ignore artwork computed for a different shape (e.g. just after switching).
   const current = artwork?.shapeId === polyhedron.id ? artwork : null
   // Shapes the GPU preview can't handle keep showing (worker-updated) textures throughout.
@@ -80,7 +83,8 @@ function Solid() {
           packed={current?.faces[face.index]}
           mmPerUnit={current?.mmPerUnit ?? 1}
           styles={styles}
-          maxPx={TEXTURE_PX}
+          pxPerUnit={pxPerUnit}
+          linePx={LINE_PX}
           showArtwork={!live}
           selected={face.index === selected}
           showNumber={showNumbers}

@@ -28,8 +28,10 @@ interface FaceMeshProps {
   packed: PackedFace | undefined
   mmPerUnit: number
   styles: Readonly<Record<LayerId, LayerStyle>>
-  /** Longest texture side in pixels. */
-  maxPx: number
+  /** Texture density shared by all faces of the solid (pixels per model unit). */
+  pxPerUnit: number
+  /** Preview line width in pixels at 1×, shared by all faces. */
+  linePx: number
   /** false: plain panel (the live GPU lines are showing instead of a stale texture). */
   showArtwork: boolean
   selected: boolean
@@ -43,7 +45,8 @@ export function FaceMesh({
   packed,
   mmPerUnit,
   styles,
-  maxPx,
+  pxPerUnit,
+  linePx,
   showArtwork,
   selected,
   showNumber,
@@ -59,9 +62,9 @@ export function FaceMesh({
   useEffect(() => () => geometry.dispose(), [geometry])
 
   useLayoutEffect(() => {
-    faceTexture.update(face, packed, mmPerUnit, styles, maxPx, anisotropy)
+    faceTexture.update(face, packed, mmPerUnit, styles, pxPerUnit, linePx, anisotropy)
     invalidate()
-  }, [faceTexture, face, packed, mmPerUnit, styles, maxPx, anisotropy, invalidate])
+  }, [faceTexture, face, packed, mmPerUnit, styles, pxPerUnit, linePx, anisotropy, invalidate])
 
   // Face-number label: hidden when the face points away from the camera.
   const label = useRef<HTMLSpanElement>(null)
