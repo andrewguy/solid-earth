@@ -1,7 +1,8 @@
-# Polyhedral Map Projector: Project Plan
+# Solid Earth (polyhedral map projector): Project Plan
 
-> Status: **Release 1 functionally complete (2026-11-10)**, except milestone 9 (deployment), which was
-> deferred. Milestones 1–8 and 10 are implemented and tested; see §11 for progress, changes from
+> Status: **Release 1 functionally complete (2026-11-10)**. Milestone 9 (deployment) is prepared:
+> the CI/Pages workflow and base path are in place, pending creation of the `solid-earth` repo and
+> the first push. Milestones 1–8 and 10 are implemented and tested; see §11 for progress, changes from
 > this plan, and the manual checks still outstanding.
 
 ---
@@ -333,7 +334,7 @@ tests/                  # vitest unit + fast-check properties
 | 6. 3D preview + globe rotation | Done (live GPU linework while dragging, see §3 Performance) |
 | 7. Polygons & layers | Done |
 | 8. Panel mode | Done (10m dropped) |
-| 9. Deployment | **Deferred** |
+| 9. Deployment | Prepared: workflow, `/solid-earth/` base path, MIT LICENSE; awaiting repo and first push |
 | 10. Persistence & polish | Done |
 | Post-R1: Archimedean presets | Done: all 13 Archimedean solids (incl. chiral snubs), picker grouped by family |
 | Post-R1: Catalan presets | Done: all 13 Catalan solids, as polar duals of the Archimedean presets |
@@ -361,6 +362,8 @@ tests/                  # vitest unit + fast-check properties
 - **Catalan presets** are generated as polar duals of the Archimedean presets (face plane
   n·x = d → vertex n/d; canonical because Archimedean solids have a midsphere), scaled so the
   longest edge is 1. Tests check the insphere, a single dihedral angle and congruent faces.
+- **Name:** the app is **Solid Earth** (repo `solid-earth`); project files use
+  `app: "solid-earth"`.
 - **Project files** carry `preset` (rebuilt from code on load) alongside the embedded polyhedron;
   import is tolerant (invalid fields fall back to defaults with notes).
 

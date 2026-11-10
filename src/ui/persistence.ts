@@ -3,7 +3,7 @@ import type { ProjectSettings } from '@/core/settings'
 import { selectSettings, useAppStore } from '@/ui/store'
 
 /** localStorage key for the autosaved project (same format as an exported project.json). */
-export const AUTOSAVE_KEY = 'polyhedral-map-projector:autosave'
+export const AUTOSAVE_KEY = 'solid-earth:autosave'
 export const AUTOSAVE_DELAY_MS = 500
 
 /** The subset of Storage we use, so tests can pass a fake. */

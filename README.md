@@ -1,4 +1,4 @@
-# Polyhedral Map Projector
+# Solid Earth
 
 Turn a world map into laser-cut panels that assemble into a polyhedral globe.
 
@@ -56,6 +56,13 @@ npm run build        # typecheck + production build
 npm run build:data   # regenerate map data (see below)
 ```
 
+### Deployment
+
+`.github/workflows/ci.yml` runs typecheck, lint, format check, tests and build on every push and
+pull request, and deploys `dist/` to GitHub Pages from `main` when they all pass. Production
+builds use the base path `/solid-earth/`; set `BASE_PATH` (e.g. `BASE_PATH=/ npm run build`) for
+a custom domain or another host.
+
 ### Project layout
 
 ```
@@ -91,7 +98,7 @@ draws them.
 
 ## Licences
 
-- Code: MIT.
+- Code: MIT (see [LICENSE](LICENSE)).
 - Map data: [Natural Earth](https://www.naturalearthdata.com/), public domain; packaged by
   world-atlas (ISC).
 - Libraries: d3 and topojson (ISC), three.js (MIT), Clipper2 TypeScript port (Boost Software

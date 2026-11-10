@@ -29,8 +29,7 @@ const custom: ProjectSettings = {
   kerfMm: 0.2,
 }
 
-const raw = (o: object) =>
-  JSON.stringify({ app: 'polyhedral-map-projector', schemaVersion: 1, ...o })
+const raw = (o: object) => JSON.stringify({ app: 'solid-earth', schemaVersion: 1, ...o })
 
 describe('project files', () => {
   it('round-trips every setting, including an embedded custom shape', () => {
@@ -110,8 +109,8 @@ describe('project files', () => {
 
   it.each([
     ['{', /not JSON/],
-    ['[]', /not a Polyhedral Map Projector project/],
-    [JSON.stringify({ app: 'other', schemaVersion: 1 }), /not a Polyhedral Map Projector project/],
+    ['[]', /not a Solid Earth project/],
+    [JSON.stringify({ app: 'other', schemaVersion: 1 }), /not a Solid Earth project/],
     [raw({ schemaVersion: PROJECT_SCHEMA_VERSION + 1 }), /newer version/],
     [raw({ schemaVersion: 'one' }), /schema version/],
     [raw({ polyhedron: { vertices: 'x', faces: [] } }), /malformed/],

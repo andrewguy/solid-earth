@@ -19,7 +19,7 @@ import {
 import type { Vec3 } from '../vec3'
 
 export const PROJECT_SCHEMA_VERSION = 1
-const APP = 'polyhedral-map-projector'
+const APP = 'solid-earth'
 
 /** Versioned project file (plan §7.3): also the autosave format. */
 export interface ProjectFile extends ProjectSettings {
@@ -132,7 +132,7 @@ export function parseProject(text: string): ParsedProject {
     throw new ProjectFileError('not a valid project file (not JSON)')
   }
   if (!isObject(raw) || raw.app !== APP) {
-    throw new ProjectFileError('not a Polyhedral Map Projector project file')
+    throw new ProjectFileError('not a Solid Earth project file')
   }
   if (!isNum(raw.schemaVersion) || raw.schemaVersion < 1) {
     throw new ProjectFileError('the project file has no valid schema version')
