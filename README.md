@@ -15,9 +15,9 @@ settings, kerf, and assembly.
 
 ## Features (Release 1)
 
-- **Shapes:** tetrahedron, cube, octahedron, dodecahedron, icosahedron, truncated icosahedron,
-  plus import of any convex polyhedron from **OBJ** or **JSON** (triangulated meshes are merged
-  back into flat faces).
+- **Shapes:** the 5 Platonic and all 13 Archimedean solids (including the chiral snub cube and
+  snub dodecahedron), plus import of any convex polyhedron from **OBJ** or **JSON** (triangulated
+  meshes are merged back into flat faces).
 - **Map layers:** coastlines, country borders, rivers, lakes, land and ocean fills, graticule.
   Each layer has its own on/off switch, mode (fill, shore line or both) and LightBurn colour.
 - **Data:** Natural Earth at 1:110m and 1:50m, bundled with the app.

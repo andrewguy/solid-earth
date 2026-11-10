@@ -6,7 +6,7 @@ import { importPolyhedron, slugify } from '@/core/polyhedron/import'
 import { parsePolyhedronJson } from '@/core/polyhedron/json'
 import { parseObj } from '@/core/polyhedron/obj'
 import { PolyhedronError, preprocess } from '@/core/polyhedron/preprocess'
-import { PRESET_IDS, type PresetId, preset } from '@/core/polyhedron/presets'
+import { PRESETS, PRESET_IDS, type PresetId, preset } from '@/core/polyhedron/presets'
 import type { PolyhedronDef } from '@/core/polyhedron/types'
 import { rotate } from '@/core/quat'
 import { type Vec3, distance, dot, length } from '@/core/vec3'
@@ -103,25 +103,59 @@ const cube: PolyhedronDef = { name: 'cube', vertices: cubeVerts, faces: cubeFace
 // ---------- presets ----------
 
 describe('presets', () => {
-  const expected: Record<PresetId, [number, number, number]> = {
-    tetrahedron: [4, 6, 4],
-    cube: [8, 12, 6],
-    octahedron: [6, 12, 8],
-    dodecahedron: [20, 30, 12],
-    icosahedron: [12, 30, 20],
-    'truncated-icosahedron': [60, 90, 32],
+  /** [V, E, F, { sides: count }] from the standard tables. */
+  const expected: Record<PresetId, [number, number, number, Record<number, number>]> = {
+    tetrahedron: [4, 6, 4, { 3: 4 }],
+    cube: [8, 12, 6, { 4: 6 }],
+    octahedron: [6, 12, 8, { 3: 8 }],
+    dodecahedron: [20, 30, 12, { 5: 12 }],
+    icosahedron: [12, 30, 20, { 3: 20 }],
+    'truncated-tetrahedron': [12, 18, 8, { 3: 4, 6: 4 }],
+    cuboctahedron: [12, 24, 14, { 3: 8, 4: 6 }],
+    'truncated-cube': [24, 36, 14, { 3: 8, 8: 6 }],
+    'truncated-octahedron': [24, 36, 14, { 4: 6, 6: 8 }],
+    rhombicuboctahedron: [24, 48, 26, { 3: 8, 4: 18 }],
+    'truncated-cuboctahedron': [48, 72, 26, { 4: 12, 6: 8, 8: 6 }],
+    'snub-cube': [24, 60, 38, { 3: 32, 4: 6 }],
+    icosidodecahedron: [30, 60, 32, { 3: 20, 5: 12 }],
+    'truncated-dodecahedron': [60, 90, 32, { 3: 20, 10: 12 }],
+    'truncated-icosahedron': [60, 90, 32, { 5: 12, 6: 20 }],
+    rhombicosidodecahedron: [60, 120, 62, { 3: 20, 4: 30, 5: 12 }],
+    'truncated-icosidodecahedron': [120, 180, 62, { 4: 30, 6: 20, 10: 12 }],
+    'snub-dodecahedron': [60, 150, 92, { 3: 80, 5: 12 }],
   }
 
-  it.each(PRESET_IDS)('%s has the right V/E/F, unit edges and is centred', (id) => {
+  it.each(PRESET_IDS)('%s has the right V/E/F and face types, unit edges, centred', (id) => {
     const def = preset(id)
     const frames = buildFrames(def)
-    expect([def.vertices.length, frames.edges.length, def.faces.length]).toEqual(expected[id])
+    const [v, e, f, sides] = expected[id]
+    expect([def.vertices.length, frames.edges.length, def.faces.length]).toEqual([v, e, f])
+    const counts: Record<number, number> = {}
+    for (const face of def.faces) counts[face.length] = (counts[face.length] ?? 0) + 1
+    expect(counts).toEqual(sides)
+    expect(PRESETS[id].faces).toBe(f) // picker metadata matches the built shape
     for (const e of edgeLengths(def)) expect(e).toBeCloseTo(1, 12)
     const c = def.vertices.reduce<Vec3>(
       (s, p) => [s[0] + p[0], s[1] + p[1], s[2] + p[2]],
       [0, 0, 0],
     )
     expect(length(c)).toBeLessThan(1e-12)
+  })
+
+  it.each(PRESET_IDS)('%s is vertex-uniform: every vertex on one sphere', (id) => {
+    const radii = preset(id).vertices.map(length)
+    for (const r of radii) expect(r).toBeCloseTo(radii[0]!, 12)
+  })
+
+  it('snub solids are chiral: not equal to their mirror image', () => {
+    for (const id of ['snub-cube', 'snub-dodecahedron'] as const) {
+      const def = preset(id)
+      const key = (p: Vec3) => p.map((c) => c.toFixed(6)).join(',')
+      const verts = new Set(def.vertices.map(key))
+      // A mirror (x → −x) maps the vertex set onto a different set.
+      const mirrored = def.vertices.map(([x, y, z]): Vec3 => [-x, y, z])
+      expect(mirrored.every((p) => verts.has(key(p)))).toBe(false)
+    }
   })
 
   it('truncated icosahedron has two plane distances and no insphere (plan §4.1)', () => {

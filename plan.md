@@ -20,7 +20,7 @@ A client-side web app that takes vector world-map data (countries, coastlines, r
 
 ### 2.1 Release 1 (panel mode)
 - Load Natural Earth vector data. 110m and 50m are bundled. (10m was dropped; see §11.)
-- Polyhedron presets: tetrahedron, cube, octahedron, dodecahedron, icosahedron, truncated icosahedron. The icosahedron is the primary dev/test target.
+- Polyhedron presets: the 5 Platonic solids and all 13 Archimedean solids (the original list was tetrahedron, cube, octahedron, dodecahedron, icosahedron, truncated icosahedron; the rest were added after R1, see §11). The icosahedron is the primary dev/test target.
 - **Custom polyhedra, early:** import from OBJ and from JSON `{vertices, faces}`. Convex only.
 - Project the map onto each face, clipped to the face polygon, with exact edge continuity across neighbouring faces.
 - 2D preview of each face, and a 3D preview of the assembled solid with the map applied.
@@ -74,7 +74,7 @@ A client-side web app that takes vector world-map data (countries, coastlines, r
 | File naming | `<shape>_face-NN.svg` (zero-padded face index from the polyhedron definition; the same number appears in the 2D and 3D previews). ZIP: `<shape>_faces.zip`, which includes `project.json`. |
 | Globe rotation | Drag the globe in the 3D preview (arcball). Stored as a quaternion and shown read-only as lon/lat/roll, with a reset button. |
 | Persistence | localStorage autosave (debounced), plus import/export of a versioned project JSON. Custom polyhedra are embedded in the project file. |
-| Performance | Projection runs in a **web worker from R1**. While dragging, the linework is drawn live on the GPU (shader applies the rotation and radial projection); the exact worker projection replaces it when the drag ends. Shapes with > 64 faces fall back to 110m worker previews. |
+| Performance | Projection runs in a **web worker from R1**. While dragging, the linework is drawn live on the GPU (shader applies the rotation and radial projection); the exact worker projection replaces it when the drag ends. Shapes with > 128 faces fall back to 110m worker previews. |
 | Testing | Vitest unit tests plus fast-check property tests for all core geometry. |
 | Assembly aids | None in R1. |
 | Timeline | No deadline; hobby pace, milestone-driven. |
@@ -335,6 +335,7 @@ tests/                  # vitest unit + fast-check properties
 | 8. Panel mode | Done (10m dropped) |
 | 9. Deployment | **Deferred** |
 | 10. Persistence & polish | Done |
+| Post-R1: Archimedean presets | Done: all 13 Archimedean solids (incl. chiral snubs), picker grouped by family |
 
 ### Changes from the plan
 
@@ -353,6 +354,9 @@ tests/                  # vitest unit + fast-check properties
 - **Butt-joint inner gap** reported as 2·t·sin(V/2), where V = 180° − dihedral.
 - **Enlarged face** is a dialog (thumbnail click or double-click in 3D), since the centre panel is
   the 3D view; it also lists each edge's neighbour, length and dihedral for assembly.
+- **Presets** cover all 13 Archimedean solids, built from their standard Cartesian coordinates
+  (snubs use the tribonacci constant / real root of ξ³ − 2ξ = φ; one handedness). The live GPU
+  preview supports up to 128 faces (the snub dodecahedron has 92).
 - **Project files** carry `preset` (rebuilt from code on load) alongside the embedded polyhedron;
   import is tolerant (invalid fields fall back to defaults with notes).
 

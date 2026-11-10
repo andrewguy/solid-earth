@@ -3,7 +3,7 @@ import { type Vec3, cross, dot, length, normalize, scale, sub } from '../vec3'
 /**
  * Faces of the convex hull of a small point set, by brute force over vertex triples.
  *
- * Intended for generating presets from their vertex sets (tens of points), not for user
+ * Intended for generating presets from their vertex sets (up to ~120 points), not for user
  * input; custom polyhedra go through the full preprocessing pipeline (milestone 5).
  * Coplanar points are merged into a single polygonal face, ordered CCW as seen from outside.
  * Every point is assumed to be a hull vertex (true for the presets).
@@ -23,15 +23,20 @@ export function convexHullFaces(points: readonly Vec3[]): number[][] {
         if (length(c) < tol * extent) continue // collinear
         let normal = normalize(c)
         let d = dot(normal, pi)
-        const side = points.map((p) => dot(normal, p) - d)
-        if (side.every((s) => s <= tol)) {
-          // normal already points outward
-        } else if (side.every((s) => s >= -tol)) {
+        // Reject as soon as points turn up on both sides; most triples fail within a few.
+        let above = false
+        let below = false
+        for (let m = 0; m < n && !(above && below); m++) {
+          const sd = dot(normal, points[m]!) - d
+          if (sd > tol) above = true
+          else if (sd < -tol) below = true
+        }
+        if (above && below) continue // plane cuts through the point set
+        if (above) {
           normal = scale(normal, -1)
           d = -d
-        } else {
-          continue // plane cuts through the point set
         }
+        const side = points.map((p) => dot(normal, p) - d)
         const onPlane = side.flatMap((s, m) => (Math.abs(s) <= tol ? [m] : []))
         const key = onPlane.join(',')
         if (seen.has(key)) continue

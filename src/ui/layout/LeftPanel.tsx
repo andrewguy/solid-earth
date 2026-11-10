@@ -7,7 +7,7 @@ import { dihedralGroups } from '@/core/panel'
 import { buildFrames } from '@/core/polyhedron/faces'
 import { importPolyhedron } from '@/core/polyhedron/import'
 import { PolyhedronError } from '@/core/polyhedron/preprocess'
-import { PRESETS, PRESET_IDS, isPresetId, preset } from '@/core/polyhedron/presets'
+import { PRESETS, PRESET_IDS, type PresetFamily, isPresetId } from '@/core/polyhedron/presets'
 import type { PolyhedronDef } from '@/core/polyhedron/types'
 import { distance, length } from '@/core/vec3'
 import { RESOLUTIONS, type Resolution } from '@/core/settings'
@@ -19,7 +19,9 @@ import { ScrollArea } from '@/ui/components/ui/scroll-area'
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from '@/ui/components/ui/select'
@@ -34,6 +36,11 @@ import { useAppStore } from '@/ui/store'
 // their milestones land.
 
 const CUSTOM = 'custom'
+
+const PRESET_FAMILIES: readonly { family: PresetFamily; label: string }[] = [
+  { family: 'platonic', label: 'Platonic solids' },
+  { family: 'archimedean', label: 'Archimedean solids' },
+]
 
 /** Circumsphere diameter in mm when the longest edge is `edgeMm` (plan §3). */
 function circumDiameterMm(def: PolyhedronDef, edgeMm: number): number {
@@ -146,15 +153,25 @@ function ShapePicker() {
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          {PRESET_IDS.map((id) => (
-            <SelectItem key={id} value={id}>
-              {PRESETS[id].label} ({preset(id).faces.length})
-            </SelectItem>
+          {PRESET_FAMILIES.map(({ family, label }) => (
+            <SelectGroup key={family}>
+              <SelectLabel>{label}</SelectLabel>
+              {PRESET_IDS.filter((id) => PRESETS[id].family === family).map((id) => (
+                <SelectItem key={id} value={id}>
+                  {PRESETS[id].label}
+                  <span className="text-muted-foreground">{PRESETS[id].faces} faces</span>
+                </SelectItem>
+              ))}
+            </SelectGroup>
           ))}
           {custom && (
-            <SelectItem value={CUSTOM}>
-              Custom: {custom.def.name} ({custom.def.faces.length})
-            </SelectItem>
+            <SelectGroup>
+              <SelectLabel>Imported</SelectLabel>
+              <SelectItem value={CUSTOM}>
+                {custom.def.name}
+                <span className="text-muted-foreground">{custom.def.faces.length} faces</span>
+              </SelectItem>
+            </SelectGroup>
           )}
         </SelectContent>
       </Select>

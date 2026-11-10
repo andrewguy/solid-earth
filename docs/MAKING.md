@@ -8,13 +8,24 @@ reads SVG.
 
 More faces means less distortion and a rounder globe, but more panels to cut and glue.
 
-| Shape                 | Panels                         | Distortion at panel corners (area) | Notes                            |
-| --------------------- | ------------------------------ | ---------------------------------- | -------------------------------- |
-| Truncated icosahedron | 32 (12 pentagons, 20 hexagons) | about 1.3×                         | Roundest; the "soccer ball"      |
-| Icosahedron           | 20 triangles                   | about 2×                           | Good balance; the classic choice |
-| Dodecahedron          | 12 pentagons                   | about 2×                           | Fewer, larger panels             |
-| Cube, octahedron      | 6 / 8                          | about 5×                           | Noticeably stretched corners     |
-| Tetrahedron           | 4                              | 27×                                | Mostly a curiosity               |
+| Shape                                                   | Panels                                      | Distortion at panel corners (area) | Notes                                     |
+| ------------------------------------------------------- | ------------------------------------------- | ---------------------------------- | ----------------------------------------- |
+| Rhombicosidodecahedron                                  | 62 (20 triangles, 30 squares, 12 pentagons) | about 1.3×                         | Very round; three panel shapes            |
+| Snub dodecahedron                                       | 92 (80 triangles, 12 pentagons)             | about 1.3×                         | Roundest; lots of small triangles; chiral |
+| Truncated icosahedron                                   | 32 (12 pentagons, 20 hexagons)              | about 1.3×                         | The "soccer ball"; a great all-rounder    |
+| Truncated icosidodecahedron                             | 62 (30 squares, 20 hexagons, 12 decagons)   | about 1.35×                        | Large decagons for big regions            |
+| Icosidodecahedron                                       | 32 (20 triangles, 12 pentagons)             | about 1.6×                         | Few panel types, nicely round             |
+| Rhombicuboctahedron, snub cube, truncated cuboctahedron | 26 / 38 / 26                                | 1.6–1.8×                           | Cube-symmetric alternatives               |
+| Icosahedron, dodecahedron                               | 20 / 12                                     | about 2×                           | Classic; simplest to assemble             |
+| Truncated octahedron                                    | 14 (6 squares, 8 hexagons)                  | about 2.2×                         |                                           |
+| Cuboctahedron, truncated cube                           | 14 / 14                                     | about 3×                           | Noticeable stretching                     |
+| Cube, octahedron                                        | 6 / 8                                       | about 5×                           | Noticeably stretched corners              |
+| Truncated tetrahedron, tetrahedron                      | 8 / 4                                       | 7× / 27×                           | Mostly curiosities                        |
+
+All 5 Platonic and 13 Archimedean solids are built in. Archimedean solids mix two or three panel
+shapes; every edge is the same length, so the edge length you enter applies to all panels. The
+two snub solids are chiral (they have a left- and right-handed form); the app builds one
+handedness.
 
 The app shows a warning for shapes with noticeable or severe distortion. Distortion here only
 means features look larger toward the panel corners. Lines still meet exactly across edges on
