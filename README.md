@@ -10,7 +10,7 @@ Requires Node 26 (`nvm use` picks it up from `.nvmrc`).
 ```sh
 npm install
 npm run dev          # Vite dev server
-npm test             # Vitest
+npm test             # Vitest (FC_NUM_RUNS=5000 npm test for thorough property runs)
 npm run typecheck    # tsc -b
 npm run lint         # ESLint
 npm run build        # typecheck + production build
