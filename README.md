@@ -15,8 +15,8 @@ settings, kerf, and assembly.
 
 ## Features (Release 1)
 
-- **Shapes:** the 5 Platonic and all 13 Archimedean solids (including the chiral snub cube and
-  snub dodecahedron), plus import of any convex polyhedron from **OBJ** or **JSON** (triangulated
+- **Shapes:** the 5 Platonic, 13 Archimedean and 13 Catalan solids (Catalan solids have every
+  panel identical), plus import of any convex polyhedron from **OBJ** or **JSON** (triangulated
   meshes are merged back into flat faces).
 - **Map layers:** coastlines, country borders, rivers, lakes, land and ocean fills, graticule.
   Each layer has its own on/off switch, mode (fill, shore line or both) and LightBurn colour.

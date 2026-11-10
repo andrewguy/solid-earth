@@ -1,4 +1,5 @@
-import { type Vec3, distance } from '../vec3'
+import { type Vec3, distance, scale } from '../vec3'
+import { buildFrames } from './faces'
 import { convexHullFaces } from './hull'
 import { preprocess } from './preprocess'
 import type { PolyhedronDef } from './types'
@@ -75,7 +76,25 @@ function fromVertices(name: string, raw: Vec3[]): PolyhedronDef {
   return preprocess({ name, vertices, faces: convexHullFaces(vertices) })
 }
 
-export type PresetFamily = 'platonic' | 'archimedean'
+/**
+ * Catalan solid as the dual of an Archimedean solid, by polar reciprocation: each face plane
+ * n·x = d becomes the vertex n/d. Archimedean solids have a midsphere, so this gives the
+ * canonical Catalan shape (up to scale). Scaled so the longest edge is 1 (plan §3 sizing).
+ */
+function dualOf(name: string, archimedean: string): PolyhedronDef {
+  if (!isPresetId(archimedean)) throw new Error(`unknown preset ${archimedean}`)
+  const frames = buildFrames(preset(archimedean))
+  const points = frames.faces.map((f) => scale(f.normal, 1 / f.distance))
+  const def = preprocess({ name, vertices: points, faces: convexHullFaces(points) })
+  let longest = 0
+  for (const f of def.faces)
+    f.forEach((a, k) => {
+      longest = Math.max(longest, distance(def.vertices[a]!, def.vertices[f[(k + 1) % f.length]!]!))
+    })
+  return { ...def, vertices: def.vertices.map((v) => scale(v, 1 / longest)) }
+}
+
+export type PresetFamily = 'platonic' | 'archimedean' | 'catalan'
 
 interface PresetSpec {
   readonly label: string
@@ -264,6 +283,86 @@ export const PRESETS = {
         bases.flatMap(evenPerms).flatMap((v) => signsWithParity(v, 'odd')),
       )
     },
+  },
+
+  // --- Catalan solids (Archimedean duals: every face identical) ---
+  'triakis-tetrahedron': {
+    label: 'Triakis tetrahedron',
+    family: 'catalan',
+    faces: 12,
+    build: () => dualOf('triakis-tetrahedron', 'truncated-tetrahedron'),
+  },
+  'rhombic-dodecahedron': {
+    label: 'Rhombic dodecahedron',
+    family: 'catalan',
+    faces: 12,
+    build: () => dualOf('rhombic-dodecahedron', 'cuboctahedron'),
+  },
+  'triakis-octahedron': {
+    label: 'Triakis octahedron',
+    family: 'catalan',
+    faces: 24,
+    build: () => dualOf('triakis-octahedron', 'truncated-cube'),
+  },
+  'tetrakis-hexahedron': {
+    label: 'Tetrakis hexahedron',
+    family: 'catalan',
+    faces: 24,
+    build: () => dualOf('tetrakis-hexahedron', 'truncated-octahedron'),
+  },
+  'deltoidal-icositetrahedron': {
+    label: 'Deltoidal icositetrahedron',
+    family: 'catalan',
+    faces: 24,
+    build: () => dualOf('deltoidal-icositetrahedron', 'rhombicuboctahedron'),
+  },
+  'disdyakis-dodecahedron': {
+    label: 'Disdyakis dodecahedron',
+    family: 'catalan',
+    faces: 48,
+    build: () => dualOf('disdyakis-dodecahedron', 'truncated-cuboctahedron'),
+  },
+  'pentagonal-icositetrahedron': {
+    label: 'Pentagonal icositetrahedron',
+    family: 'catalan',
+    faces: 24,
+    build: () => dualOf('pentagonal-icositetrahedron', 'snub-cube'),
+  },
+  'rhombic-triacontahedron': {
+    label: 'Rhombic triacontahedron',
+    family: 'catalan',
+    faces: 30,
+    build: () => dualOf('rhombic-triacontahedron', 'icosidodecahedron'),
+  },
+  'triakis-icosahedron': {
+    label: 'Triakis icosahedron',
+    family: 'catalan',
+    faces: 60,
+    build: () => dualOf('triakis-icosahedron', 'truncated-dodecahedron'),
+  },
+  'pentakis-dodecahedron': {
+    label: 'Pentakis dodecahedron',
+    family: 'catalan',
+    faces: 60,
+    build: () => dualOf('pentakis-dodecahedron', 'truncated-icosahedron'),
+  },
+  'deltoidal-hexecontahedron': {
+    label: 'Deltoidal hexecontahedron',
+    family: 'catalan',
+    faces: 60,
+    build: () => dualOf('deltoidal-hexecontahedron', 'rhombicosidodecahedron'),
+  },
+  'disdyakis-triacontahedron': {
+    label: 'Disdyakis triacontahedron',
+    family: 'catalan',
+    faces: 120,
+    build: () => dualOf('disdyakis-triacontahedron', 'truncated-icosidodecahedron'),
+  },
+  'pentagonal-hexecontahedron': {
+    label: 'Pentagonal hexecontahedron',
+    family: 'catalan',
+    faces: 60,
+    build: () => dualOf('pentagonal-hexecontahedron', 'snub-dodecahedron'),
   },
 } as const satisfies Record<string, PresetSpec>
 

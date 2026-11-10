@@ -27,6 +27,22 @@ shapes; every edge is the same length, so the edge length you enter applies to a
 two snub solids are chiral (they have a left- and right-handed form); the app builds one
 handedness.
 
+**Catalan solids** (the duals of the Archimedean solids) have **every panel identical**: one
+outline, one dihedral angle at every joint. That makes them easy to nest on a sheet and very
+consistent to assemble, at the cost of two or three different edge lengths per panel (the
+edge length you enter is the longest one). Good picks:
+
+| Shape                      | Panels                | Distortion (area) |
+| -------------------------- | --------------------- | ----------------- |
+| Disdyakis triacontahedron  | 120 triangles         | about 1.35×       |
+| Deltoidal hexecontahedron  | 60 kites              | about 1.3×        |
+| Pentakis dodecahedron      | 60 triangles          | about 1.3×        |
+| Pentagonal hexecontahedron | 60 pentagons (chiral) | about 1.3×        |
+| Rhombic triacontahedron    | 30 rhombi             | about 1.6×        |
+| Rhombic dodecahedron       | 12 rhombi             | about 2.8×        |
+
+Each Catalan solid has the same distortion as its Archimedean partner.
+
 The app shows a warning for shapes with noticeable or severe distortion. Distortion here only
 means features look larger toward the panel corners. Lines still meet exactly across edges on
 every shape.

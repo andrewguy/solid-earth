@@ -123,9 +123,24 @@ describe('presets', () => {
     rhombicosidodecahedron: [60, 120, 62, { 3: 20, 4: 30, 5: 12 }],
     'truncated-icosidodecahedron': [120, 180, 62, { 4: 30, 6: 20, 10: 12 }],
     'snub-dodecahedron': [60, 150, 92, { 3: 80, 5: 12 }],
+    'triakis-tetrahedron': [8, 18, 12, { 3: 12 }],
+    'rhombic-dodecahedron': [14, 24, 12, { 4: 12 }],
+    'triakis-octahedron': [14, 36, 24, { 3: 24 }],
+    'tetrakis-hexahedron': [14, 36, 24, { 3: 24 }],
+    'deltoidal-icositetrahedron': [26, 48, 24, { 4: 24 }],
+    'disdyakis-dodecahedron': [26, 72, 48, { 3: 48 }],
+    'pentagonal-icositetrahedron': [38, 60, 24, { 5: 24 }],
+    'rhombic-triacontahedron': [32, 60, 30, { 4: 30 }],
+    'triakis-icosahedron': [32, 90, 60, { 3: 60 }],
+    'pentakis-dodecahedron': [32, 90, 60, { 3: 60 }],
+    'deltoidal-hexecontahedron': [62, 120, 60, { 4: 60 }],
+    'disdyakis-triacontahedron': [62, 180, 120, { 3: 120 }],
+    'pentagonal-hexecontahedron': [92, 150, 60, { 5: 60 }],
   }
 
-  it.each(PRESET_IDS)('%s has the right V/E/F and face types, unit edges, centred', (id) => {
+  const family = (f: string) => PRESET_IDS.filter((id) => PRESETS[id].family === f)
+
+  it.each(PRESET_IDS)('%s has the right V/E/F and face types, centred', (id) => {
     const def = preset(id)
     const frames = buildFrames(def)
     const [v, e, f, sides] = expected[id]
@@ -134,7 +149,10 @@ describe('presets', () => {
     for (const face of def.faces) counts[face.length] = (counts[face.length] ?? 0) + 1
     expect(counts).toEqual(sides)
     expect(PRESETS[id].faces).toBe(f) // picker metadata matches the built shape
-    for (const e of edgeLengths(def)) expect(e).toBeCloseTo(1, 12)
+    // Platonic/Archimedean: all edges 1. Catalan: longest edge 1 (plan §3 sizing).
+    const lengths = edgeLengths(def)
+    expect(Math.max(...lengths)).toBeCloseTo(1, 12)
+    if (PRESETS[id].family !== 'catalan') for (const e of lengths) expect(e).toBeCloseTo(1, 12)
     const c = def.vertices.reduce<Vec3>(
       (s, p) => [s[0] + p[0], s[1] + p[1], s[2] + p[2]],
       [0, 0, 0],
@@ -142,13 +160,63 @@ describe('presets', () => {
     expect(length(c)).toBeLessThan(1e-12)
   })
 
-  it.each(PRESET_IDS)('%s is vertex-uniform: every vertex on one sphere', (id) => {
-    const radii = preset(id).vertices.map(length)
-    for (const r of radii) expect(r).toBeCloseTo(radii[0]!, 12)
+  it.each(family('catalan'))(
+    '%s is face-uniform: insphere, one dihedral, congruent faces',
+    (id) => {
+      const frames = buildFrames(preset(id))
+      for (const f of frames.faces) expect(f.distance).toBeCloseTo(frames.faces[0]!.distance, 12)
+      for (const e of frames.edges) expect(e.dihedral).toBeCloseTo(frames.edges[0]!.dihedral, 12)
+      // Same multiset of side lengths and interior angles on every face.
+      const signature = (pts: readonly (readonly [number, number])[]) => {
+        const n = pts.length
+        const sides = pts.map((p, k) => {
+          const q = pts[(k + 1) % n]!
+          return Math.hypot(q[0] - p[0], q[1] - p[1])
+        })
+        const angles = pts.map((p, k) => {
+          const a = pts[(k + n - 1) % n]!
+          const b = pts[(k + 1) % n]!
+          const u = [a[0] - p[0], a[1] - p[1]]
+          const v = [b[0] - p[0], b[1] - p[1]]
+          return Math.atan2(u[0]! * v[1]! - u[1]! * v[0]!, u[0]! * v[0]! + u[1]! * v[1]!)
+        })
+        const r = (xs: number[]) =>
+          xs
+            .map((x) => Math.abs(x).toFixed(9))
+            .sort()
+            .join(',')
+        return `${r(sides)}|${r(angles)}`
+      }
+      const first = signature(frames.faces[0]!.vertices2D)
+      for (const f of frames.faces) expect(signature(f.vertices2D)).toBe(first)
+    },
+  )
+
+  it.each(family('catalan'))('%s is the exact dual of its Archimedean partner (V ↔ F)', (id) => {
+    const archimedean = family('archimedean')
+    const [v, e, f] = expected[id]
+    const partner = archimedean.filter((a) => {
+      const [av, ae, af] = expected[a]
+      return av === f && af === v && ae === e
+    })
+    expect(partner.length).toBeGreaterThanOrEqual(1)
   })
 
-  it('snub solids are chiral: not equal to their mirror image', () => {
-    for (const id of ['snub-cube', 'snub-dodecahedron'] as const) {
+  it.each([...family('platonic'), ...family('archimedean')])(
+    '%s is vertex-uniform: every vertex on one sphere',
+    (id) => {
+      const radii = preset(id).vertices.map(length)
+      for (const r of radii) expect(r).toBeCloseTo(radii[0]!, 12)
+    },
+  )
+
+  it('snubs and their duals are chiral: not equal to their mirror image', () => {
+    for (const id of [
+      'snub-cube',
+      'snub-dodecahedron',
+      'pentagonal-icositetrahedron',
+      'pentagonal-hexecontahedron',
+    ] as const) {
       const def = preset(id)
       const key = (p: Vec3) => p.map((c) => c.toFixed(6)).join(',')
       const verts = new Set(def.vertices.map(key))

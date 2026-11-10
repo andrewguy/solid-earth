@@ -20,7 +20,7 @@ A client-side web app that takes vector world-map data (countries, coastlines, r
 
 ### 2.1 Release 1 (panel mode)
 - Load Natural Earth vector data. 110m and 50m are bundled. (10m was dropped; see §11.)
-- Polyhedron presets: the 5 Platonic solids and all 13 Archimedean solids (the original list was tetrahedron, cube, octahedron, dodecahedron, icosahedron, truncated icosahedron; the rest were added after R1, see §11). The icosahedron is the primary dev/test target.
+- Polyhedron presets: the 5 Platonic, 13 Archimedean and 13 Catalan solids (the original list was tetrahedron, cube, octahedron, dodecahedron, icosahedron, truncated icosahedron; the rest were added after R1, see §11). The icosahedron is the primary dev/test target.
 - **Custom polyhedra, early:** import from OBJ and from JSON `{vertices, faces}`. Convex only.
 - Project the map onto each face, clipped to the face polygon, with exact edge continuity across neighbouring faces.
 - 2D preview of each face, and a 3D preview of the assembled solid with the map applied.
@@ -336,6 +336,7 @@ tests/                  # vitest unit + fast-check properties
 | 9. Deployment | **Deferred** |
 | 10. Persistence & polish | Done |
 | Post-R1: Archimedean presets | Done: all 13 Archimedean solids (incl. chiral snubs), picker grouped by family |
+| Post-R1: Catalan presets | Done: all 13 Catalan solids, as polar duals of the Archimedean presets |
 
 ### Changes from the plan
 
@@ -356,7 +357,10 @@ tests/                  # vitest unit + fast-check properties
   the 3D view; it also lists each edge's neighbour, length and dihedral for assembly.
 - **Presets** cover all 13 Archimedean solids, built from their standard Cartesian coordinates
   (snubs use the tribonacci constant / real root of ξ³ − 2ξ = φ; one handedness). The live GPU
-  preview supports up to 128 faces (the snub dodecahedron has 92).
+  preview supports up to 128 faces (the disdyakis triacontahedron has 120).
+- **Catalan presets** are generated as polar duals of the Archimedean presets (face plane
+  n·x = d → vertex n/d; canonical because Archimedean solids have a midsphere), scaled so the
+  longest edge is 1. Tests check the insphere, a single dihedral angle and congruent faces.
 - **Project files** carry `preset` (rebuilt from code on load) alongside the embedded polyhedron;
   import is tolerant (invalid fields fall back to defaults with notes).
 

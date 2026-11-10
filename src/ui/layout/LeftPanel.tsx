@@ -40,6 +40,7 @@ const CUSTOM = 'custom'
 const PRESET_FAMILIES: readonly { family: PresetFamily; label: string }[] = [
   { family: 'platonic', label: 'Platonic solids' },
   { family: 'archimedean', label: 'Archimedean solids' },
+  { family: 'catalan', label: 'Catalan solids (identical faces)' },
 ]
 
 /** Circumsphere diameter in mm when the longest edge is `edgeMm` (plan §3). */
