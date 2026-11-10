@@ -2,6 +2,7 @@ import { RotateCcw, Upload } from 'lucide-react'
 import { type ReactNode, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
+import { rotationReadout } from '@/core/geo/rotation'
 import type { LayerId } from '@/core/layers'
 import { importPolyhedron } from '@/core/polyhedron/import'
 import { PolyhedronError } from '@/core/polyhedron/preprocess'
@@ -39,6 +40,36 @@ function circumDiameterMm(def: PolyhedronDef, edgeMm: number): number {
     })
   const radius = Math.max(...def.vertices.map(length))
   return (2 * radius * edgeMm) / longest
+}
+
+function RotationReadout() {
+  const rotation = useAppStore((s) => s.rotation)
+  const resetRotation = useAppStore((s) => s.resetRotation)
+  const r = rotationReadout(rotation)
+  const cells = [
+    ['Lon', r.lon],
+    ['Lat', r.lat],
+    ['Roll', r.roll],
+  ] as const
+  return (
+    <>
+      <dl className="grid grid-cols-3 gap-2 text-center text-xs">
+        {cells.map(([k, v]) => (
+          <div key={k} className="rounded-md border px-2 py-1.5">
+            <dt className="text-muted-foreground">{k}</dt>
+            <dd className="font-mono">{v.toFixed(1)}°</dd>
+          </div>
+        ))}
+      </dl>
+      <p className="text-xs text-muted-foreground">
+        The geographic point at the top of the solid, and the spin about it. Drag the globe in the
+        3D view to change.
+      </p>
+      <Button variant="outline" size="sm" className="w-full" onClick={resetRotation}>
+        <RotateCcw /> Reset rotation
+      </Button>
+    </>
+  )
 }
 
 function ShapePicker() {
@@ -256,17 +287,7 @@ export function LeftPanel() {
           </Section>
 
           <Section title="Globe rotation">
-            <dl className="grid grid-cols-3 gap-2 text-center text-xs">
-              {(['Lon', 'Lat', 'Roll'] as const).map((k) => (
-                <div key={k} className="rounded-md border px-2 py-1.5">
-                  <dt className="text-muted-foreground">{k}</dt>
-                  <dd className="font-mono">0.0°</dd>
-                </div>
-              ))}
-            </dl>
-            <Button variant="outline" size="sm" className="w-full" disabled>
-              <RotateCcw /> Reset rotation
-            </Button>
+            <RotationReadout />
           </Section>
         </div>
       </ScrollArea>

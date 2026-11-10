@@ -13,7 +13,8 @@ export function FacesPanel() {
   const projection = useAppStore((s) => s.projection)
   const computing = useAppStore((s) => s.computing)
   const selected = useAppStore((s) => s.selectedFace)
-  const selectFace = useAppStore((s) => s.selectFace)
+  const enlargeFace = useAppStore((s) => s.enlargeFace)
+  const dragging = useAppStore((s) => s.dragging)
   const [zipping, setZipping] = useState(false)
 
   async function exportZip() {
@@ -55,13 +56,15 @@ export function FacesPanel() {
       <Separator />
       <ScrollArea className="min-h-0 flex-1">
         {projection ? (
-          <ul className="grid grid-cols-2 gap-2 p-4">
+          <ul
+            className={`grid grid-cols-2 gap-2 p-4 transition-opacity ${dragging ? 'opacity-50' : ''}`}
+          >
             {projection.faces.map((face, i) => (
               <li key={i}>
                 <Button
                   variant="outline"
                   aria-pressed={i === selected}
-                  onClick={() => selectFace(i)}
+                  onClick={() => enlargeFace(i)}
                   className="relative aspect-square h-auto w-full bg-white p-1 hover:bg-white aria-pressed:ring-2 aria-pressed:ring-primary"
                 >
                   <img src={face.url} alt="" className="h-full w-full object-contain" />

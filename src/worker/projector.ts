@@ -6,7 +6,7 @@ import {
   borderLines,
   coastlineLines,
 } from '@/core/geo/topojson'
-import type { LayerId, LayerStyle } from '@/core/layers'
+import type { LayerId, LayerStyle, LineLayerId } from '@/core/layers'
 import {
   type FaceArtwork,
   type PreparedMap,
@@ -34,11 +34,32 @@ export interface ProjectRequest {
   readonly edgeLengthMm: number
   readonly rotation: Quat
   readonly layerStyles: Readonly<Record<LayerId, LayerStyle>>
+  /**
+   * false for interactive previews (dragging): skip SVG serialisation and rounding, and only
+   * return packed artwork for the 3D textures. Default true.
+   */
+  readonly wantSvg?: boolean
+}
+
+/** A layer's polylines as flat typed arrays (transferable without copying). */
+export interface PackedLayer {
+  /** x0, y0, x1, y1, … in mm, face frame (y up). */
+  readonly coords: Float32Array
+  /** Point index where each polyline starts, plus a final entry = total points. */
+  readonly starts: Uint32Array
+}
+
+export interface PackedFace {
+  readonly layers: Partial<Record<LineLayerId, PackedLayer>>
 }
 
 export interface ProjectResult {
+  /** Echo of `polyhedron.id`, so callers can discard results for a shape no longer shown. */
+  readonly shapeId: string
   readonly shape: string
-  readonly svgs: string[]
+  readonly mmPerUnit: number
+  readonly faces: PackedFace[]
+  readonly svgs: string[] | null
   /** Time spent loading/preparing data and projecting; 0 when served from cache. */
   readonly prepareMs: number
   readonly projectMs: number
@@ -85,7 +106,16 @@ export class Projector {
 
   async project(req: ProjectRequest): Promise<ProjectResult> {
     const frames = this.framesFor(req.polyhedron)
-    const key = JSON.stringify([req.polyhedron.id, req.resolution, req.edgeLengthMm, req.rotation])
+    const wantSvg = req.wantSvg ?? true
+    const precisionMm = wantSvg ? 0.01 : null
+    const mmPerUnit = req.edgeLengthMm / longestEdge(frames)
+    const key = JSON.stringify([
+      req.polyhedron.id,
+      req.resolution,
+      req.edgeLengthMm,
+      req.rotation,
+      precisionMm,
+    ])
     let prepareMs = 0
     let projectMs = 0
     let arts = this.lastArt?.key === key ? this.lastArt.arts : null
@@ -93,20 +123,53 @@ export class Projector {
       const t0 = performance.now()
       const map = await this.preparedMap(req.resolution)
       const t1 = performance.now()
-      arts = buildAllFaces(frames, rotateMap(map, req.rotation), {
-        mmPerUnit: req.edgeLengthMm / longestEdge(frames),
-        precisionMm: 0.01,
-      })
+      arts = buildAllFaces(frames, rotateMap(map, req.rotation), { mmPerUnit, precisionMm })
       projectMs = performance.now() - t1
       prepareMs = t1 - t0
       this.lastArt = { key, arts }
     }
     const options = { ...DEFAULT_SVG_OPTIONS, styles: req.layerStyles }
     return {
+      shapeId: req.polyhedron.id,
       shape: req.polyhedron.def.name,
-      svgs: arts.map((art) => faceToSvg(art, options)),
+      mmPerUnit,
+      faces: arts.map(packFace),
+      svgs: wantSvg ? arts.map((art) => faceToSvg(art, options)) : null,
       prepareMs,
       projectMs,
     }
   }
+}
+
+/** Flatten a face's polylines into typed arrays. Always fresh: the buffers get transferred. */
+export function packFace(art: FaceArtwork): PackedFace {
+  const layers: Partial<Record<LineLayerId, PackedLayer>> = {}
+  for (const [id, layer] of Object.entries(art.layers) as [
+    LineLayerId,
+    FaceArtwork['layers'][LineLayerId],
+  ][]) {
+    if (!layer) continue
+    const total = layer.polylines.reduce((n, pl) => n + pl.length, 0)
+    const coords = new Float32Array(total * 2)
+    const starts = new Uint32Array(layer.polylines.length + 1)
+    let k = 0
+    layer.polylines.forEach((pl, i) => {
+      starts[i] = k
+      for (const [x, y] of pl) {
+        coords[2 * k] = x
+        coords[2 * k + 1] = y
+        k++
+      }
+    })
+    starts[layer.polylines.length] = k
+    layers[id] = { coords, starts }
+  }
+  return { layers }
+}
+
+/** The ArrayBuffers inside a result, for zero-copy transfer out of the worker. */
+export function transferables(result: ProjectResult): ArrayBuffer[] {
+  return result.faces.flatMap((f) =>
+    Object.values(f.layers).flatMap((l) => (l ? [l.coords.buffer, l.starts.buffer] : [])),
+  ) as ArrayBuffer[]
 }

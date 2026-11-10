@@ -5,6 +5,7 @@ import { type PresetId, preset } from '@/core/polyhedron/presets'
 import type { PolyhedronDef } from '@/core/polyhedron/types'
 import { IDENTITY, type Quat } from '@/core/quat'
 import type { ProjectSettings, Resolution } from '@/core/settings'
+import type { PackedFace } from '@/worker/projector'
 
 export interface FaceOutput {
   readonly svg: string
@@ -17,6 +18,13 @@ export interface Projection {
   readonly faces: readonly FaceOutput[]
   readonly prepareMs: number
   readonly projectMs: number
+}
+
+/** Projected linework for the 3D textures (updated live while dragging). */
+export interface Artwork {
+  readonly shapeId: string
+  readonly mmPerUnit: number
+  readonly faces: readonly PackedFace[]
 }
 
 /** A polyhedron plus a stable id for caching: the preset id, or `custom:<n>`. */
@@ -38,7 +46,13 @@ interface AppState {
   layerStyles: Record<LayerId, LayerStyle>
   // UI / derived
   selectedFace: number
+  /** Face shown enlarged in the dialog, or null. */
+  enlargedFace: number | null
+  showFaceNumbers: boolean
+  /** True while the user is dragging the globe: previews run at 110m. */
+  dragging: boolean
   projection: Projection | null
+  artwork: Artwork | null
   computing: boolean
   error: string | null
 
@@ -48,6 +62,12 @@ interface AppState {
   setEdgeLengthMm: (mm: number) => void
   setResolution: (r: Resolution) => void
   selectFace: (index: number) => void
+  enlargeFace: (index: number | null) => void
+  setShowFaceNumbers: (on: boolean) => void
+  setRotation: (q: Quat) => void
+  resetRotation: () => void
+  setDragging: (dragging: boolean) => void
+  setArtwork: (artwork: Artwork) => void
   setLayerEnabled: (id: LayerId, enabled: boolean) => void
   setComputing: () => void
   setProjection: (p: Omit<Projection, 'faces'> & { svgs: readonly string[] }) => void
@@ -62,7 +82,11 @@ export const useAppStore = create<AppState>()((set, get) => ({
   resolution: '50m',
   layerStyles: { ...DEFAULT_LAYER_STYLES },
   selectedFace: 0,
+  enlargedFace: null,
+  showFaceNumbers: false,
+  dragging: false,
   projection: null,
+  artwork: null,
   computing: false,
   error: null,
 
@@ -80,6 +104,13 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
   setResolution: (resolution) => set({ resolution }),
   selectFace: (index) => set({ selectedFace: index }),
+  enlargeFace: (index) =>
+    set(index === null ? { enlargedFace: null } : { enlargedFace: index, selectedFace: index }),
+  setShowFaceNumbers: (on) => set({ showFaceNumbers: on }),
+  setRotation: (rotation) => set({ rotation }),
+  resetRotation: () => set({ rotation: IDENTITY }),
+  setDragging: (dragging) => set({ dragging }),
+  setArtwork: (artwork) => set({ artwork }),
   setLayerEnabled: (id, enabled) =>
     set((s) => ({ layerStyles: { ...s.layerStyles, [id]: { ...s.layerStyles[id], enabled } } })),
   setComputing: () => set({ computing: true }),

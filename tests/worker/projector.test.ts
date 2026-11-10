@@ -11,7 +11,7 @@ import countries110m from '@/data/countries-110m.topo.json'
 import countries50m from '@/data/countries-50m.topo.json'
 import land110m from '@/data/land-110m.topo.json'
 import land50m from '@/data/land-50m.topo.json'
-import { type DataLoader, type MapSources, Projector } from '@/worker/projector'
+import { type DataLoader, type MapSources, Projector, transferables } from '@/worker/projector'
 
 const data = {
   '110m': { land: land110m, countries: countries110m },
@@ -32,7 +32,7 @@ describe('Projector', () => {
     const result = await projector.project(request)
     expect(result.shape).toBe('icosahedron')
     expect(result.svgs).toHaveLength(20)
-    for (const svg of result.svgs) expect(svg).toMatch(/^<\?xml[\s\S]*<\/svg>\n$/)
+    for (const svg of result.svgs!) expect(svg).toMatch(/^<\?xml[\s\S]*<\/svg>\n$/)
     // Plan §9: < 2 s for 32 truncated-icosahedron faces at 50m; 20 faces here.
     expect(result.projectMs).toBeLessThan(2000)
     console.log(
@@ -56,7 +56,7 @@ describe('Projector', () => {
     const projector = new Projector((r) => Promise.resolve(data[r]))
     const coarse = await projector.project({ ...request, resolution: '110m' })
     const fine = await projector.project(request)
-    const size = (svgs: string[]) => svgs.reduce((n, s) => n + s.length, 0)
+    const size = (svgs: string[] | null) => svgs!.reduce((n, s) => n + s.length, 0)
     expect(size(fine.svgs)).toBeGreaterThan(3 * size(coarse.svgs))
   })
 
@@ -72,9 +72,26 @@ describe('Projector', () => {
       },
     })
     expect(restyled.projectMs).toBe(0)
-    expect(restyled.svgs.some((s) => s.includes('layer-borders'))).toBe(false)
+    expect(restyled.svgs!.some((s) => s.includes('layer-borders'))).toBe(false)
     await projector.project({ ...request, edgeLengthMm: 150 })
     expect(load).toHaveBeenCalledTimes(1)
+  })
+
+  it('preview mode returns packed artwork only, matching the full result', async () => {
+    const projector = new Projector((r) => Promise.resolve(data[r]))
+    const full = await projector.project({ ...request, resolution: '110m' })
+    const preview = await projector.project({ ...request, resolution: '110m', wantSvg: false })
+    expect(preview.svgs).toBeNull()
+    expect(preview.faces).toHaveLength(20)
+    expect(preview.mmPerUnit).toBeCloseTo(100, 12)
+    // Same polylines; preview is unrounded, full is rounded to 0.01 mm.
+    full.faces.forEach((f, i) => {
+      const a = f.layers.coastlines!
+      const b = preview.faces[i]!.layers.coastlines!
+      expect(b.starts.length).toBe(a.starts.length)
+      expect(b.starts.at(-1)).toBeGreaterThanOrEqual(a.starts.at(-1)!) // rounding may dedupe
+    })
+    expect(transferables(preview).length).toBeGreaterThan(20)
   })
 
   it('retries after a failed data load', async () => {

@@ -1,6 +1,7 @@
 import { Toaster } from '@/ui/components/ui/sonner'
 import { TooltipProvider } from '@/ui/components/ui/tooltip'
 import { CentrePanel } from '@/ui/layout/CentrePanel'
+import { FaceDialog } from '@/ui/layout/FaceDialog'
 import { FacesPanel } from '@/ui/layout/FacesPanel'
 import { LeftPanel } from '@/ui/layout/LeftPanel'
 import { useProjectionSync } from '@/ui/useProjectionSync'
@@ -14,6 +15,7 @@ export default function App() {
         <CentrePanel />
         <FacesPanel />
       </div>
+      <FaceDialog />
       <Toaster position="bottom-left" richColors />
     </TooltipProvider>
   )
