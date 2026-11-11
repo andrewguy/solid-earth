@@ -190,7 +190,12 @@ function setup(id: PresetId, tip: FingerTip, clearanceMm: number, widthMm = 10) 
 }
 
 /** Points filling face f's fingers (finger segments past the butt inset), in 3D. */
-function fingerSamples(frames: PolyhedronFrames, f: number, p: FingerParams): Vec3[] {
+function fingerSamples(
+  frames: PolyhedronFrames,
+  f: number,
+  p: FingerParams,
+  endsOnly = false,
+): Vec3[] {
   const face = frames.faces[f]!
   const loop = face.vertexIndices
   const out: Vec3[] = []
@@ -209,6 +214,8 @@ function fingerSamples(frames: PolyhedronFrames, f: number, p: FingerParams): Ve
     const n: Vec2 = [-e[1], e[0]]
     const forward = loop[k]! < loop[(k + 1) % loop.length]!
     for (let i = 0; i < lay.count; i += 2) {
+      // The fingers nearest the corners: the first and last this panel owns on the edge.
+      if (endsOnly && i !== 0 && i !== lay.count - 2) continue
       const j = forward ? i : lay.count - 1 - i
       const lo = lay.start + j * lay.width
       const [u0, u1] = forward
@@ -234,20 +241,26 @@ describe('fingered panels', () => {
   it.each(CASES)(
     '$id ($tip, clearance $clearanceMm mm): no finger enters any other panel',
     ({ id, tip, clearanceMm }) => {
-      // Narrow fingers leave little leftover length, so some sit right at the corner clearance.
-      for (const widthMm of [10, 2.3]) checkNoCollisions(setup(id, tip, clearanceMm, widthMm))
+      checkNoCollisions(setup(id, tip, clearanceMm))
+      // Narrow fingers leave little leftover length, so the end fingers sit right at the corner
+      // clearance; only those need checking again.
+      checkNoCollisions(setup(id, tip, clearanceMm, 2.3), true)
     },
   )
 
-  function checkNoCollisions({ frames, p, outlines }: ReturnType<typeof setup>) {
+  function checkNoCollisions({ frames, p, outlines }: ReturnType<typeof setup>, endsOnly = false) {
     let fingered = 0
     const eps = 1e-7
     for (const face of frames.faces) {
-      const samples = fingerSamples(frames, face.index, p)
+      // Only panels sharing a vertex with this one can touch its fingers.
+      const near = frames.faces.filter(
+        (o) =>
+          o.index !== face.index && o.vertexIndices.some((v) => face.vertexIndices.includes(v)),
+      )
+      const samples = fingerSamples(frames, face.index, p, endsOnly)
       fingered += samples.length
       for (const q of samples) {
-        for (const other of frames.faces) {
-          if (other.index === face.index) continue
+        for (const other of near) {
           const { xy, depth } = toPlane(frames, other.index, q)
           const inside =
             depth > eps &&
