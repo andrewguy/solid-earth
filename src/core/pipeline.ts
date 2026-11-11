@@ -167,14 +167,7 @@ export function buildFaceArtwork(
   frames: PolyhedronFrames,
   faceIndex: number,
   map: PreparedMap,
-  {
-    mmPerUnit,
-    precisionMm,
-    fills: want = {},
-    north,
-    kerfMm = 0,
-    thicknessMm = 0,
-  }: ArtworkOptions,
+  { mmPerUnit, precisionMm, fills: want = {}, north, kerfMm = 0, thicknessMm = 0 }: ArtworkOptions,
 ): FaceArtwork {
   const face = frames.faces[faceIndex]
   if (!face) throw new Error(`no face ${faceIndex}`)
