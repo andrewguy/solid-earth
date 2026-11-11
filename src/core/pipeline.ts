@@ -1,4 +1,4 @@
-import { type Cap, boundingCap, capsOverlap, faceCap } from './clip/cull'
+import { type Cap, boundingCap, capsOverlap, faceCap, polygonCap } from './clip/cull'
 import { clipRingToCone } from './clip/polygon'
 import { clipPolylineToCone } from './clip/polyline'
 import type { SphereRings } from './geo/lines'
@@ -7,6 +7,7 @@ import {
   BUTT,
   type JointOptions,
   fingerParams,
+  fingerReach,
   fingerSafeInterior,
   fingeredOutline,
 } from './joints'
@@ -21,7 +22,7 @@ import {
   unionPositive,
 } from './planar/clipper'
 import { roundPolyline } from './planar/round'
-import type { FaceFrame, PolyhedronFrames } from './polyhedron/faces'
+import { type FaceFrame, type PolyhedronFrames, planePoint } from './polyhedron/faces'
 import { gnomonic } from './project/gnomonic'
 import { northUpRotation } from './project/orientation'
 import { IDENTITY, type Quat, rotate } from './quat'
@@ -61,8 +62,8 @@ export interface FaceArtwork {
   readonly rotation: number
   /**
    * The panel as cut (before kerf), CCW: the true face, with each edge inset for square-cut butt
-   * joints when a thickness is given (plan §3), or with finger joints (plan §12). Engraving is
-   * clipped to it, and never runs past the true face.
+   * joints when a thickness is given (plan §3), or with finger joints (plan §12). Engraving
+   * covers all of it, including finger tips that reach past the true edge.
    */
   readonly outline: readonly Vec2[]
   /** Path to cut: the outline offset outward by kerf/2, or the outline itself (plan §3 Kerf). */
@@ -206,8 +207,6 @@ export function buildFaceArtwork(
   const face = frames.faces[faceIndex]
   if (!face) throw new Error(`no face ${faceIndex}`)
   const finish = (pts: Vec2[]) => (precisionMm === null ? pts : roundPolyline(pts, precisionMm))
-  // The true face's cap still bounds the panel's outer surface, so it remains valid for culling.
-  const cap = faceCap(face)
   const rotation = north ? northUpRotation(face, north) : 0
   const t: OutputTransform = {
     face,
@@ -220,18 +219,26 @@ export function buildFaceArtwork(
   const panel = fingers
     ? fingeredOutline(frames, faceIndex, fingers)
     : panelOutline(frames, faceIndex, thicknessMm / mmPerUnit)
-  // Butt panels are convex: clip on the sphere to the panel's cone, which is exact because
-  // gnomonic projection maps its planes to the panel edges (with no thickness these are the
-  // face's own, shared-edge exact planes). Fingered panels are not convex: clip on the sphere to
-  // the true face, then in 2D to the panel's outer surface (plan §12.4 item 2).
-  const planes = !fingers && thicknessMm > 0 ? polygonConePlanes(face, panel) : face.edgePlanes
-  const outlineExact = panel.map((p) => toOutput(t, p))
-  const region = fingers
-    ? intersection(
-        toPaths64([outlineExact]),
-        toPaths64([face.vertices2D.map((p) => toOutput(t, p))]),
+  // Butt panels are convex and lie within the true face: clip on the sphere to the panel's cone,
+  // which is exact because gnomonic projection maps its planes to the panel edges (with no
+  // thickness these are the face's own, shared-edge exact planes), and cull with the face's cap.
+  // Fingered panels are not convex and their fingers may reach past the true edge: clip on the
+  // sphere to a convex polygon containing the whole panel, then in 2D to the cut outline, so the
+  // map runs all the way into the fingers (plan §12.2 Engraving).
+  const reach = fingers ? fingerReach(frames, faceIndex, fingers) : null
+  const cap = reach
+    ? polygonCap(
+        face,
+        reach.map((p) => planePoint(face, p)),
       )
-    : null
+    : faceCap(face)
+  const planes = reach
+    ? polygonConePlanes(face, reach)
+    : thicknessMm > 0
+      ? polygonConePlanes(face, panel)
+      : face.edgePlanes
+  const outlineExact = panel.map((p) => toOutput(t, p))
+  const region = fingers ? toPaths64([outlineExact]) : null
   // Lines entirely inside this convex polygon need no 2D clipping.
   const safe = fingers
     ? fingerSafeInterior(frames, faceIndex, fingers)?.map((p) => toOutput(t, p))

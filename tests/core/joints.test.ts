@@ -11,11 +11,11 @@ import {
   fingerProfile,
   fingeredOutline,
 } from '@/core/joints'
-import { fromPaths64, intersection, ringArea, toPaths64 } from '@/core/planar/clipper'
+import { ringArea } from '@/core/planar/clipper'
 import { buildAllFaces, longestEdge, prepareMap } from '@/core/pipeline'
 import { type PolyhedronFrames, buildFrames, planePoint } from '@/core/polyhedron/faces'
 import { type PresetId, preset } from '@/core/polyhedron/presets'
-import { type Vec2, type Vec3, add, dot, scale, sub } from '@/core/vec3'
+import { type Vec2, type Vec3, add, cross, dot, normalize, scale, sub } from '@/core/vec3'
 
 import { vecCloseTo } from '../arbitraries'
 
@@ -354,40 +354,56 @@ describe('fingered artwork', () => {
     }
   })
 
-  it('engraves only on the outer surface: inside the outline and the true face', () => {
+  /** Signed distance (mm) from a point to the true face; negative = past its edge. */
+  const trueFaceOf = (f: number) =>
+    frames.faces[f]!.vertices2D.map(([x, y]): Vec2 => [x * mmPerUnit, y * mmPerUnit])
+
+  it('engraves the whole cut shape, including finger tips past the true edge', () => {
+    let pastEdge = 0
     for (const art of arts) {
-      const trueFace = frames.faces[art.faceIndex]!.vertices2D.map(([x, y]): Vec2 => [
-        x * mmPerUnit,
-        y * mmPerUnit,
-      ])
+      const trueFace = trueFaceOf(art.faceIndex)
       const lines = art.lines.graticule ?? []
       expect(lines.length).toBeGreaterThan(0)
-      // Some engraving reaches onto the fingers, beyond the butt-joint outline.
-      let onFingers = 0
       for (const pt of lines.flat()) {
         expect(signedDistance(art.outline, pt)).toBeGreaterThan(-2e-3)
-        expect(signedDistance(trueFace, pt)).toBeGreaterThan(-2e-3)
-        if (signedDistance(trueFace, pt) < 0.5) onFingers++
+        if (signedDistance(trueFace, pt) < -1) pastEdge++
       }
-      expect(onFingers).toBeGreaterThan(0)
+    }
+    expect(pastEdge).toBeGreaterThan(0)
+  })
+
+  it('past the true edge, the map is the same gnomonic projection (great circles stay straight)', () => {
+    // A great circle through face 0, crossing each of its edges.
+    const face = frames.faces[0]!
+    const circleNormal = normalize(cross(face.normal, face.u))
+    const circle: Vec3[] = []
+    for (let i = 0; i <= 720; i++) {
+      const a = (i / 720) * 2 * Math.PI
+      circle.push(
+        add(scale(face.normal, Math.cos(a)), scale(cross(circleNormal, face.normal), Math.sin(a))),
+      )
+    }
+    const [art] = buildAllFaces(frames, prepareMap({ coastlines: [circle] }), {
+      mmPerUnit,
+      precisionMm: null,
+      thicknessMm: 3,
+      joint,
+    })
+    const pts = (art!.lines.coastlines ?? []).flat()
+    expect(pts.length).toBeGreaterThan(0)
+    const trueFace = trueFaceOf(0)
+    expect(Math.min(...pts.map((pt) => signedDistance(trueFace, pt)))).toBeLessThan(-1)
+    for (const [x, y] of pts) {
+      // Back to 3D on the face plane: the direction must lie on the great circle.
+      const dir = normalize(planePoint(face, [x / mmPerUnit, y / mmPerUnit]))
+      expect(Math.abs(dot(dir, circleNormal))).toBeLessThan(1e-6)
     }
   })
 
-  it('ocean with no land fills exactly the outer surface', () => {
+  it('ocean with no land fills exactly the cut outline', () => {
     for (const art of arts) {
       const area = (art.fills.ocean ?? []).reduce((s, r) => s + ringArea(r), 0)
-      const trueFace = frames.faces[art.faceIndex]!.vertices2D.map(([x, y]): Vec2 => [
-        x * mmPerUnit,
-        y * mmPerUnit,
-      ])
-      const surface = fromPaths64(
-        intersection(toPaths64([art.outline]), toPaths64([trueFace])),
-        null,
-      )
-      const expected = surface.reduce((s, r) => s + ringArea(r), 0)
-      // Smaller than the outline: fill-mode tips stick out past the true face.
-      expect(expected).toBeLessThan(ringArea(art.outline))
-      expect(area).toBeCloseTo(expected, 1)
+      expect(area).toBeCloseTo(ringArea(art.outline), 1)
     }
   })
 })

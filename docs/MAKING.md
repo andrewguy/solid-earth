@@ -174,8 +174,10 @@ They line panels up as you assemble and give the glue far more area than a butt 
   sheet's real thickness, so test on scrap first. Kerf compensation (if on) is applied on top.
 - **Finger tips:**
   - **Fill joint** (default): fingers reach right through the neighbouring panel and stick out
-    slightly past its surface. Sand them flush for a closed outer surface. The map is never
-    engraved on the part that sticks out, so sanding loses nothing.
+    slightly past its surface. Sand them flush for a closed outer surface, or leave them proud.
+    The map is engraved right to the finger tips, continuing the neighbouring panel's map where
+    the finger covers it, so tips left proud carry the map; sanding them flush removes it along
+    with the tip.
   - **Flush:** nothing sticks out, and small wedge-shaped gaps open at the surface beside each
     finger.
 

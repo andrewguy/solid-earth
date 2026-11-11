@@ -324,3 +324,15 @@ export function fingerSafeInterior(
     throw err
   }
 }
+
+/**
+ * A convex polygon containing the whole fingered panel: the face pushed outward on each edge as
+ * far as its finger tips reach past the true edge (fill mode). Engraving is clipped on the
+ * sphere to its cone before the 2D clip to the cut outline, so the map runs out onto the fingers.
+ */
+export function fingerReach(frames: PolyhedronFrames, faceIndex: number, p: FingerParams): Vec2[] {
+  const outsets = faceEdges(frames, faceIndex).map((e) =>
+    Math.min(0, fingerProfile(e.dihedral, p.thickness, p.tip, p.clearance).tip),
+  )
+  return insetPolygon(frames.faces[faceIndex]!.vertices2D, outsets)
+}

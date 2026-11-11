@@ -411,7 +411,7 @@ fingers get long and thin at shallow joints.
 | Corners | **Computed clearance** per edge end, plus a small margin, so fingers never collide where 3+ panels meet. The ends of each edge stay as plain butt joint. |
 | Fit | Adjustable **clearance**, which can go negative for a press fit. Default slip fit of about 0.1 mm per side. |
 | Kerf | **Independent of clearance.** Clearance shapes the fingers; kerf compensation (if on) then offsets the whole cut path as now. |
-| Engraving | The map runs **onto finger tops**. It is clipped to the panel's real outer surface, but never past the true edge, so sanding protruding tips loses nothing. |
+| Engraving | The map covers the **whole cut shape**, right into each finger, including tips that reach past the true edge. (Revised 2026-11-11; originally clipped at the true edge.) Past the edge, the panel's own gnomonic projection simply continues, so a finger tip carries the map from the neighbouring panel's slot area it covers. Fill-mode tips sit above the neighbour's surface, so sanding them flush removes that engraving too; it is only visible on tips left proud. |
 
 ### 12.3 Out of scope for the first version
 
@@ -448,9 +448,14 @@ per-edge joint overrides.
   values with 3 mm material: 3.7 mm (cube), 8–8.5 mm (truncated icosahedron, rhombic
   triacontahedron), 10.1 mm (icosahedron). A tighter test against the actual finger and notch
   shapes could fit an extra finger pair on short edges.
-- **Engraving**: in finger mode it is clipped on the sphere to the true face, then in 2D (Clipper2,
-  open paths for lines) to the outline ∩ true face. Lines entirely inside a convex safe interior
-  skip the 2D clip. 50m, all layers, truncated icosahedron: about 565 ms against 364 ms for butt.
+- **Engraving**: in finger mode it is clipped on the sphere to the cone of `fingerReach` (the face
+  pushed outward on each edge by how far the fill-mode tips reach past it, which is convex and
+  contains the whole panel), then in 2D (Clipper2, open paths for lines) to the cut outline.
+  Culling uses that polygon's cap. Lines entirely inside a convex safe interior skip the 2D clip.
+  Radially, a fill-mode tip (reaching about 3.35 mm past the edge on an icosahedron with 3 mm
+  material) shows the neighbour's map out to about that distance, while the neighbour's slot runs
+  to about 4.5 mm. The roughly 1 mm in between falls on the finger's square-cut end and can't be
+  engraved. 50m, all layers, truncated icosahedron: about 565 ms against 364 ms for butt.
 - **Default tip**: fill (strength first, §12).
 - **Tests** (`tests/core/joints.test.ts`): cross-section properties over random dihedral angles
   (no overlap, notch as shallow as possible, flush never crosses the neighbour's outer surface,

@@ -36,7 +36,15 @@ export function boundingCap(points: readonly Vec3[]): Cap {
 
 /** Bounding cap of a face's cone (around its normal, through its farthest vertex). */
 export function faceCap(face: FaceFrame): Cap {
-  const radius = Math.max(...face.vertices.map((v) => angle(face.normal, v)))
+  return polygonCap(face, face.vertices)
+}
+
+/**
+ * Bounding cap of the cone over a convex polygon on a face's plane (given by its 3D corners),
+ * around the face normal.
+ */
+export function polygonCap(face: FaceFrame, corners: readonly Vec3[]): Cap {
+  const radius = Math.max(...corners.map((v) => angle(face.normal, v)))
   return radius < Math.PI / 2 ? { centre: face.normal, radius } : EVERYTHING
 }
 
