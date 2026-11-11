@@ -1,21 +1,38 @@
-import type { PolyhedronFrames } from './polyhedron/faces'
+import { type FaceFrame, type PolyhedronFrames, planePoint } from './polyhedron/faces'
+import { type Vec2, type Vec3, cross, normalize } from './vec3'
 
 const DEG = 180 / Math.PI
 
 /**
- * Butt joint with outer faces meeting (plan §3): square-cut panels touch along the outer edge
- * and open a V on the inside. Its angle is 180° − dihedral, and at the inner surface the gap
- * between two panels of thickness t is 2·t·sin(V / 2).
+ * Square-cut butt joint (plan §3). Each panel's outer face lies on its face plane and its edges
+ * are cut perpendicular to it. On a convex solid, two such panels cut at the true face size would
+ * overlap at the inner corner, so every edge is pulled in until the two inner corners meet on the
+ * plane bisecting the dihedral angle.
+ *
+ * With dihedral θ and thickness t, and V = 180° − θ:
+ * - inset of each panel edge, measured in the face plane: t·tan(V/2)
+ * - a V-groove of angle V opens on the outside, 2·t·sin(V/2) wide at the outer surface.
  */
 export function vGap(dihedralRad: number, thicknessMm: number) {
   const v = Math.PI - dihedralRad
-  return { angleDeg: v * DEG, innerGapMm: 2 * thicknessMm * Math.sin(v / 2) }
+  return {
+    angleDeg: v * DEG,
+    insetMm: edgeInset(dihedralRad, thicknessMm),
+    grooveMm: 2 * thicknessMm * Math.sin(v / 2),
+  }
+}
+
+/** How far a square-cut edge is pulled in from the true edge: t·tan(V/2) = t / tan(θ/2). */
+export function edgeInset(dihedralRad: number, thickness: number): number {
+  return thickness / Math.tan(dihedralRad / 2)
 }
 
 export interface DihedralGroup {
   readonly dihedralDeg: number
   readonly vGapDeg: number
-  readonly innerGapMm: number
+  readonly insetMm: number
+  /** Width of the outer V-groove at the surface. */
+  readonly grooveMm: number
   readonly edgeCount: number
 }
 
@@ -35,7 +52,8 @@ export function dihedralGroups(frames: PolyhedronFrames, thicknessMm: number): D
       return {
         dihedralDeg: dihedral * DEG,
         vGapDeg: gap.angleDeg,
-        innerGapMm: gap.innerGapMm,
+        insetMm: gap.insetMm,
+        grooveMm: gap.grooveMm,
         edgeCount: count,
       }
     })
@@ -45,6 +63,8 @@ export interface FaceEdgeInfo {
   /** Position in the face's vertex loop: edge k runs from vertex k to vertex k+1. */
   readonly k: number
   readonly neighbour: number
+  /** Interior dihedral angle in radians. */
+  readonly dihedral: number
   readonly dihedralDeg: number
   /** Length in model units. */
   readonly length: number
@@ -63,8 +83,84 @@ export function faceEdges(frames: PolyhedronFrames, faceIndex: number): FaceEdge
     return {
       k,
       neighbour: e.faces[0] === faceIndex ? e.faces[1] : e.faces[0],
+      dihedral: e.dihedral,
       dihedralDeg: e.dihedral * DEG,
       length: Math.hypot(q[0] - p[0], q[1] - p[1]),
     }
   })
+}
+
+/** The material is too thick for a panel: an edge would vanish or turn inside out. */
+export class PanelError extends Error {
+  override name = 'PanelError'
+}
+
+/**
+ * Move each edge of a strictly convex CCW polygon (y up) inward by its own distance
+ * (`insets[k]` for the edge from vertex k to k+1). Vertex k of the result is where the offset
+ * lines of edges k−1 and k cross, so vertices keep their indices. Throws `PanelError` if an edge
+ * would shrink to nothing or reverse.
+ */
+export function insetPolygon(ring: readonly Vec2[], insets: readonly number[]): Vec2[] {
+  const n = ring.length
+  const lines = ring.map((p, k) => {
+    const q = ring[(k + 1) % n]!
+    const len = Math.hypot(q[0] - p[0], q[1] - p[1])
+    const e: Vec2 = [(q[0] - p[0]) / len, (q[1] - p[1]) / len]
+    const normal: Vec2 = [-e[1], e[0]] // inward for CCW
+    return { e, normal, c: normal[0] * p[0] + normal[1] * p[1] + insets[k]! }
+  })
+  const out = lines.map((cur, k): Vec2 => {
+    const prev = lines[(k + n - 1) % n]!
+    const det = prev.normal[0] * cur.normal[1] - prev.normal[1] * cur.normal[0]
+    if (!(det > 1e-12)) throw new PanelError(`vertex ${k} is not a convex corner`)
+    return [
+      (prev.c * cur.normal[1] - cur.c * prev.normal[1]) / det,
+      (prev.normal[0] * cur.c - cur.normal[0] * prev.c) / det,
+    ]
+  })
+  out.forEach((p, k) => {
+    const q = out[(k + 1) % n]!
+    const { e } = lines[k]!
+    if (!((q[0] - p[0]) * e[0] + (q[1] - p[1]) * e[1] > 0)) {
+      throw new PanelError(`edge ${k} vanishes`)
+    }
+  })
+  return out
+}
+
+/**
+ * The panel as cut (before kerf) in the face's (u, v) frame, model units: the face polygon with
+ * every edge inset for a square-cut butt joint. `thickness` is in model units.
+ */
+export function panelOutline(
+  frames: PolyhedronFrames,
+  faceIndex: number,
+  thickness: number,
+): Vec2[] {
+  const face = frames.faces[faceIndex]
+  if (!face) throw new Error(`no face ${faceIndex}`)
+  if (thickness <= 0) return [...face.vertices2D]
+  const insets = faceEdges(frames, faceIndex).map((e) => edgeInset(e.dihedral, thickness))
+  try {
+    return insetPolygon(face.vertices2D, insets)
+  } catch (err) {
+    if (err instanceof PanelError) {
+      throw new PanelError(
+        `Material is too thick for face ${faceIndex}: square-cut joints leave no panel ` +
+          `(${err.message}). Use thinner material or a larger edge length.`,
+      )
+    }
+    throw err
+  }
+}
+
+/**
+ * Inward unit normals of the planes through the origin and each edge of a polygon on the face
+ * plane, like `FaceFrame.edgePlanes`. Gnomonic projection maps these great circles to the
+ * polygon's edges, so clipping on the sphere against them clips exactly to the polygon.
+ */
+export function polygonConePlanes(face: FaceFrame, polygon: readonly Vec2[]): Vec3[] {
+  const pts = polygon.map((p) => planePoint(face, p))
+  return pts.map((p, i) => normalize(cross(p, pts[(i + 1) % pts.length]!)))
 }

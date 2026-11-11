@@ -54,7 +54,7 @@ function circumDiameterMm(def: PolyhedronDef, edgeMm: number): number {
   return (2 * radius * edgeMm) / longest
 }
 
-/** Dihedral angles and butt-joint V-gaps (plan §6.3). */
+/** Dihedral angles, edge insets and outer V-grooves for square-cut butt joints (plan §6.3). */
 function PanelInfo() {
   const def = useAppStore((s) => s.polyhedron.def)
   const thicknessMm = useAppStore((s) => s.thicknessMm)
@@ -66,8 +66,9 @@ function PanelInfo() {
           <tr className="text-left">
             <th className="font-normal">Edges</th>
             <th className="font-normal">Dihedral</th>
-            <th className="font-normal">V-gap</th>
-            <th className="text-right font-normal">Inner gap</th>
+            <th className="font-normal">V</th>
+            <th className="text-right font-normal">Inset</th>
+            <th className="text-right font-normal">Groove</th>
           </tr>
         </thead>
         <tbody className="font-mono">
@@ -76,14 +77,16 @@ function PanelInfo() {
               <td>{g.edgeCount}</td>
               <td>{g.dihedralDeg.toFixed(2)}°</td>
               <td>{g.vGapDeg.toFixed(2)}°</td>
-              <td className="text-right">{g.innerGapMm.toFixed(2)} mm</td>
+              <td className="text-right">{g.insetMm.toFixed(2)} mm</td>
+              <td className="text-right">{g.grooveMm.toFixed(2)} mm</td>
             </tr>
           ))}
         </tbody>
       </table>
       <p className="text-xs text-muted-foreground">
-        Butt joints: panels are cut square at the true face size, so outer faces meet exactly and a
-        V opens on the inside ({thicknessMm} mm material). Fill it with a glue or epoxy fillet.
+        Butt joints: panels are cut square, with each edge pulled in by the inset so neighbouring
+        panels meet at their inner corners ({thicknessMm} mm material). A V-groove of angle V opens
+        on the outside; the map lines up across it, but the groove itself is not engraved.
       </p>
     </>
   )

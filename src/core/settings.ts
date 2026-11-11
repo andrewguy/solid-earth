@@ -21,7 +21,10 @@ export interface ProjectSettings {
   readonly layerStyles: Readonly<Record<LayerId, LayerStyle>>
   /** Graticule spacing in degrees (plan §6.2, default 15°). */
   readonly graticuleIntervalDeg: number
-  /** Material thickness (plan §6.3). Butt joints keep the outer surface at the true face. */
+  /**
+   * Material thickness (plan §6.3). Square-cut butt joints inset each panel edge so the inner
+   * corners meet, leaving a V-groove on the outside.
+   */
   readonly thicknessMm: number
   /** Kerf compensation (plan §3): off by default so LightBurn's own offset can be used. */
   readonly kerfEnabled: boolean

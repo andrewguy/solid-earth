@@ -28,7 +28,7 @@ A client-side web app that takes vector world-map data (countries, coastlines, r
 - Rotate the globe under the polyhedron by dragging in the 3D preview.
 - Layers with per-layer toggles and stroke/fill settings: coastlines, country borders, rivers, lakes, land fill, ocean fill, graticule.
 - Laser output separated by operation, with LightBurn colour conventions (configurable): **cut** (face outline), **engrave** (lines and fills), **score** (graticule by default).
-- Panel mode: material thickness setting, butt joints with outer faces meeting, optional kerf compensation, dihedral and V-gap info.
+- Panel mode: material thickness setting, square-cut butt joints (edges inset so inner corners meet), optional kerf compensation, dihedral, inset and V-groove info.
 - Export an SVG per face, and a ZIP of all faces plus the project file.
 - Save the project in the browser automatically, and import/export a project JSON file.
 
@@ -64,7 +64,7 @@ A client-side web app that takes vector world-map data (countries, coastlines, r
 | Laser software | LightBurn. Stroke colours match the LightBurn palette exactly. Inkscape layer groups are also emitted so files read cleanly in Inkscape. |
 | Material modes | Both, eventually. (1) Thick panels (ply/acrylic) in R1. (2) Thin card/paper nets in R2. |
 | Panel joint styles | All four eventually. Order: **butt/inset first (R1)**, then bevel, internal frame, finger joints. |
-| Butt joint geometry | **Outer faces meet at the true edge.** Square-cut panels are cut at the true face size, so the outer surface matches the polyhedron exactly and the map lines up. A V-gap opens on the inside: gap angle = 180° − dihedral (about 41.8° on an icosahedron). Panels touch only along a line, so the docs recommend a glue/epoxy fillet in the V, or an internal frame once available. |
+| Butt joint geometry | **Square cuts, inner corners meet.** (Revised 2026-11-11: the original "outer faces meet at the true edge" is impossible with square cuts on a convex solid, because full-size panels would overlap at the inner corner.) Each panel's outer face lies on its face plane, and each edge is inset by t·tan(V/2), with V = 180° − dihedral, so neighbouring panels touch along their inner corners, on the plane bisecting the dihedral angle. A V-groove of angle V opens on the **outside**, 2·t·sin(V/2) wide at the surface (about 41.8° and 2.1 mm for 3 mm material on an icosahedron). The map keeps its true-face projection and is clipped to the inset panel, so it lines up across the groove; the groove strip is not engraved. Panels touch only along a line, so the docs recommend a glue/epoxy fillet in the inside corner, or an internal frame once available. Bevel (mitre) joints are the only way to get an outer surface that matches the polyhedron exactly. |
 | Kerf | Optional outward offset of the cut path by kerf/2. **Off by default**, so users can rely on LightBurn's own offset. Default value 0.15 mm. Engraving is never offset. |
 | Engraving style | Fully configurable per layer: stroke and/or fill, colour, LightBurn layer. |
 | Map layers | Coastlines, country borders, rivers, lakes, land, optional ocean (face minus land), graticule. No text labels in R1. |
@@ -138,7 +138,7 @@ Output per face: `FaceArtwork { outline, layers: { [layerId]: { polylines, polyg
 - **Gnomonic distortion** grows toward face corners. It is fine on an icosahedron or soccer ball, noticeable on a cube, and severe on a tetrahedron (27× areal and 9× radial scale at the corners compared with the centre; areal scale is (r/d)³). The UI shows a per-shape distortion warning.
 - **Clipped polygons** must stay closed and correctly wound for fill engraving.
 - **Float noise:** keep SVG coordinates in mm, rounded to 0.01 mm (well under laser precision), then remove duplicate points.
-- **Material thickness:** flat panels don't meet at the mathematical edges unless the joint accounts for thickness. Engraving is always projected onto the **outer** surface polygon. With butt joints where the outer faces meet (R1), the outer surface is the true face.
+- **Material thickness:** flat panels don't meet at the mathematical edges unless the joint accounts for thickness. Engraving is always projected onto the **outer** surface. With square-cut butt joints (R1) the outer surface is the true face inset per edge by t·tan(V/2); engraving is clipped on the sphere to that inset panel's cone (exact, since gnomonic projection maps those planes to the panel edges).
 - **Kerf:** the laser removes about 0.1–0.2 mm. Offset the cut outward by kerf/2 if enabled; never offset engraving.
 - **LightBurn assigns layers by exact stroke colour**, not by SVG groups. Colours must be exact palette values. Inkscape uses `inkscape:groupmode="layer"` groups, and both are emitted.
 - **Disputed borders:** Natural Earth's default point-of-view dataset is used and documented.
@@ -160,9 +160,9 @@ Output per face: `FaceArtwork { outline, layers: { [layerId]: { polylines, polyg
 - Graticule: generated with `d3.geoGraticule`, configurable interval (default 15°), densified.
 
 ### 6.3 Panel geometry
-- Cut outline = true face polygon (butt joint with outer faces meeting).
-- Optional kerf offset: Clipper2, mitre joins.
-- The info panel shows, per edge: dihedral angle and V-gap angle. It also shows material thickness, edge length and circumsphere diameter.
+- Cut outline = true face polygon with each edge inset by t·tan(V/2) for its own dihedral angle (square-cut butt joint, inner corners meeting). Mixed-dihedral solids get different insets per edge, so this is computed by intersecting the offset edge lines, not with a uniform offset.
+- Optional kerf offset: Clipper2, mitre joins, applied to the inset outline.
+- The info panel shows, per dihedral group: dihedral angle, V angle, edge inset and outer groove width. It also shows material thickness, edge length and circumsphere diameter. The enlarged-face dialog lists true and cut length per edge.
 
 ### 6.4 Layers & laser settings
 - Layers: cut outline, coastlines, borders, rivers, lakes, land, ocean, graticule.
@@ -315,7 +315,8 @@ tests/                  # vitest unit + fast-check properties
 
 ## 10. Open questions / risks
 
-- **Butt joint strength:** panels with outer faces meeting touch only along a line. Is a glue fillet sufficient at real sizes, or should the internal frame move earlier?
+- **Butt joint strength:** square-cut panels touch only along their inner corners. Is a glue fillet sufficient at real sizes, or should the internal frame move earlier?
+- **Outer groove:** square-cut joints leave a ~2 mm V-groove on the outside (3 mm material) with no map in it. Acceptable as a visible seam, or should bevel joints move earlier?
 - **North-up near poles:** the longest-edge fallback may look inconsistent. Revisit once there is real output.
 - ~~**10m data:** check download size and performance.~~ Resolved: dropped; 50m is the finest resolution.
 - **LightBurn import quirks:** SVG mm units, group handling and fill import. Verify in milestone 3.
@@ -353,7 +354,10 @@ tests/                  # vitest unit + fast-check properties
   clipped polygon outline (§5 clip-boundary edges). Land fill excludes lakes.
 - **Face orientation** in preprocessing propagates winding across shared edges and fixes the sign
   by volume, rather than orienting away from the centroid, so non-convex inputs get the right error.
-- **Butt-joint inner gap** reported as 2·t·sin(V/2), where V = 180° − dihedral.
+- **Butt-joint geometry corrected (2026-11-11):** panels are no longer cut at the true face size
+  (which would make square-cut panels overlap); each edge is inset by t·tan(V/2) and the
+  2·t·sin(V/2) gap is an outer V-groove, not an inner one. Engraving is clipped to the inset panel.
+  Thickness and kerf are now both sent to the worker (kerf previously never reached it).
 - **Enlarged face** is a dialog (thumbnail click or double-click in 3D), since the centre panel is
   the 3D view; it also lists each edge's neighbour, length and dihedral for assembly.
 - **Presets** cover all 13 Archimedean solids, built from their standard Cartesian coordinates

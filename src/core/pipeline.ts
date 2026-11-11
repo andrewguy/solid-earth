@@ -3,6 +3,7 @@ import { clipRingToCone } from './clip/polygon'
 import { clipPolylineToCone } from './clip/polyline'
 import type { SphereRings } from './geo/lines'
 import type { FillLayerId, LineSourceId } from './layers'
+import { panelOutline, polygonConePlanes } from './panel'
 import { fromPaths64, offsetPolygon, subtract, toPaths64, unionPositive } from './planar/clipper'
 import { roundPolyline } from './planar/round'
 import type { FaceFrame, PolyhedronFrames } from './polyhedron/faces'
@@ -43,7 +44,10 @@ export interface FaceArtwork {
    * 0 unless north-up orientation was requested.
    */
   readonly rotation: number
-  /** True face polygon, CCW. Engraving is always relative to this. */
+  /**
+   * The panel's outer surface, CCW: the true face, with each edge inset for square-cut butt
+   * joints when a thickness is given (plan §3). Engraving is clipped to it.
+   */
   readonly outline: readonly Vec2[]
   /** Path to cut: the outline offset outward by kerf/2, or the outline itself (plan §3 Kerf). */
   readonly cutOutline: readonly Vec2[]
@@ -67,6 +71,11 @@ export interface ArtworkOptions {
   readonly north?: Vec3
   /** Laser kerf in mm; the cut path is offset outward by half of it. 0 / absent = off. */
   readonly kerfMm?: number
+  /**
+   * Material thickness in mm. Panel edges are inset so square-cut panels meet at their inner
+   * corners (plan §3). 0 / absent = the true face (zero-thickness panels).
+   */
+  readonly thicknessMm?: number
 }
 
 /** Bundle linework and polygons with bounding caps. */
@@ -136,12 +145,17 @@ function projectRun(t: OutputTransform, run: readonly Vec3[]): Vec2[] {
  * on projection: d3 exteriors are clockwise seen from outside, and the face frame is seen from
  * outside, so this makes exteriors counter-clockwise for Clipper's Positive fill rule.
  */
-function projectPolygons(t: OutputTransform, cap: Cap, polygons: readonly PreparedPolygon[]) {
+function projectPolygons(
+  t: OutputTransform,
+  cap: Cap,
+  planes: readonly Vec3[],
+  polygons: readonly PreparedPolygon[],
+) {
   const rings: Vec2[][] = []
   for (const poly of polygons) {
     if (!capsOverlap(cap, poly.cap)) continue
     for (const ring of poly.rings) {
-      const clipped = clipRingToCone(ring, t.face.edgePlanes)
+      const clipped = clipRingToCone(ring, planes)
       if (clipped.length >= 3) rings.push(projectRun(t, clipped).reverse())
     }
   }
@@ -153,12 +167,24 @@ export function buildFaceArtwork(
   frames: PolyhedronFrames,
   faceIndex: number,
   map: PreparedMap,
-  { mmPerUnit, precisionMm, fills: want = {}, north, kerfMm = 0 }: ArtworkOptions,
+  {
+    mmPerUnit,
+    precisionMm,
+    fills: want = {},
+    north,
+    kerfMm = 0,
+    thicknessMm = 0,
+  }: ArtworkOptions,
 ): FaceArtwork {
   const face = frames.faces[faceIndex]
   if (!face) throw new Error(`no face ${faceIndex}`)
   const finish = (pts: Vec2[]) => (precisionMm === null ? pts : roundPolyline(pts, precisionMm))
+  // The true face's cap still bounds the (smaller) panel, so it remains valid for culling.
   const cap = faceCap(face)
+  // Clip on the sphere to the panel's cone: exact, because gnomonic projection maps its planes
+  // to the panel edges. With no thickness these are the face's own (shared-edge exact) planes.
+  const panel = panelOutline(frames, faceIndex, thicknessMm / mmPerUnit)
+  const planes = thicknessMm > 0 ? polygonConePlanes(face, panel) : face.edgePlanes
   const rotation = north ? northUpRotation(face, north) : 0
   const t: OutputTransform = {
     face,
@@ -171,7 +197,7 @@ export function buildFaceArtwork(
     const polylines: Vec2[][] = []
     for (const line of ls) {
       if (!capsOverlap(cap, line.cap)) continue
-      for (const run of clipPolylineToCone(line.points, face.edgePlanes)) {
+      for (const run of clipPolylineToCone(line.points, planes)) {
         const pts = finish(projectRun(t, run))
         if (pts.length >= 2) polylines.push(pts)
       }
@@ -179,11 +205,12 @@ export function buildFaceArtwork(
     lines[id] = polylines
   }
 
-  const outlineExact = face.vertices2D.map((p) => toOutput(t, p))
+  const outlineExact = panel.map((p) => toOutput(t, p))
   const fills: Partial<Record<FillLayerId, Vec2[][]>> = {}
   if (want.land || want.ocean || want.lakes) {
-    const land = want.land || want.ocean ? projectPolygons(t, cap, map.polygons.land ?? []) : []
-    const lakes = want.land || want.lakes ? projectPolygons(t, cap, map.polygons.lakes ?? []) : []
+    const polys = (id: PolygonSourceId) => projectPolygons(t, cap, planes, map.polygons[id] ?? [])
+    const land = want.land || want.ocean ? polys('land') : []
+    const lakes = want.land || want.lakes ? polys('lakes') : []
     // Land excludes lakes, so a land fill never engraves over open water.
     if (want.land) fills.land = fromPaths64(subtract(land, lakes), precisionMm)
     if (want.lakes) fills.lakes = fromPaths64(lakes, precisionMm)

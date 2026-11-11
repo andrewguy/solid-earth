@@ -55,6 +55,8 @@ export interface ProjectRequest {
   readonly graticuleIntervalDeg: number
   /** Kerf in mm applied to the cut path; 0 = off. */
   readonly kerfMm?: number
+  /** Material thickness in mm; panel edges are inset for square-cut butt joints. 0 = off. */
+  readonly thicknessMm?: number
   /**
    * false for interactive previews (dragging): skip SVG serialisation and rounding, and only
    * return packed artwork for the 3D textures. Default true.
@@ -187,6 +189,7 @@ export class Projector {
     const mmPerUnit = req.edgeLengthMm / longestEdge(frames)
     const fills = fillsNeeded(req.layerStyles)
     const kerfMm = req.kerfMm ?? 0
+    const thicknessMm = req.thicknessMm ?? 0
     const key = JSON.stringify([
       req.polyhedron.id,
       req.resolution,
@@ -196,6 +199,7 @@ export class Projector {
       fills,
       req.graticuleIntervalDeg,
       kerfMm,
+      thicknessMm,
     ])
     let prepareMs = 0
     let projectMs = 0
@@ -209,6 +213,7 @@ export class Projector {
         precisionMm,
         fills,
         kerfMm,
+        thicknessMm,
         north: rotate(req.rotation, [0, 0, 1]),
       })
       projectMs = performance.now() - t1

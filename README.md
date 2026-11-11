@@ -25,7 +25,9 @@ settings, kerf, and assembly.
   gets exported.
 - **Laser-ready SVGs:** true mm scale, north-up panels, Inkscape layers, exact LightBurn palette
   colours, optional kerf compensation on the cut path only.
-- **Panel info:** dihedral angles, V-gap angles and inner gap widths for butt joints.
+- **Square-cut butt joints:** panel edges are inset for your material thickness so neighbouring
+  panels meet at their inner corners; the panel info lists dihedral angles, insets and the width
+  of the outer V-groove.
 - **Export:** per-face SVG, or a ZIP of all faces plus `project.json`.
 - **Projects:** autosaved in the browser; open/save project files.
 

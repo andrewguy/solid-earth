@@ -58,8 +58,9 @@ If a file is rejected, the message says why (for example, which vertex makes it 
   (circumsphere) is shown underneath.
 - Check that the largest panel fits your laser bed. Hexagons on a truncated icosahedron are
   2 × edge wide.
-- **Thickness** doesn't change the cut files (see joints below), but it is used for the inner
-  gap figures in _Panel geometry_.
+- **Thickness** must match your material: each panel edge is pulled in so square-cut panels
+  meet at their inner corners (see assembly below). Measure your sheet with calipers; nominal
+  "3 mm" ply is often 2.7–3.2 mm.
 
 ## 3. Place the map
 
@@ -133,21 +134,29 @@ computer.
 
 ## 8. Assembly
 
-Panels are cut square at the true face size, so their **outer faces meet exactly** at each edge
-and the map lines up. On the inside, a V-shaped gap opens between neighbouring panels. _Panel
-geometry_ lists the angle and width of that gap for your thickness (for 3 mm panels on an
-icosahedron, about 41.8° and 2.1 mm).
+A laser cuts square edges, and square-cut panels can't meet at their outer faces on a convex
+solid (their inner corners would collide). So each panel edge is **pulled in** slightly, by an
+amount that depends on your thickness and the angle at that joint, so that neighbouring panels
+meet along their **inner** corners. That leaves a V-shaped groove on the **outside** of every
+joint. _Panel geometry_ lists the inset and the groove width for your thickness; for 3 mm panels
+on an icosahedron the inset is about 1.15 mm and the groove is about 41.8° and 2.1 mm wide.
 
-Because the panels only touch along a line, the strength comes from glue in the V:
+The map is projected as if the panels met exactly, then trimmed to each panel, so lines still
+line up across the groove; only the strip inside the groove has no engraving. Leave the grooves as
+crisp seams, or fill them with wood filler or tinted epoxy and sand flush.
+
+Because the panels only touch along a line, the strength comes from glue on the inside corner:
 
 1. **Number the backs.** Before separating parts from the sheet, pencil each panel's number
    (from the file name) on the back.
-2. **Plan neighbours.** The enlarged-face dialog lists which face joins each edge.
-3. **Tape-hinge method.** Lay neighbouring panels face down, edges touching, and run masking tape
-   along the joint on the _outer_ faces. Build strips or flowers of panels this way, then fold them
-   up; the tape holds the outer edges together while the glue sets.
-4. **Fillet the V.** Run epoxy or thick CA glue along the inside of each joint. For plywood, PVA
-   with a bead along the V works too, given time to cure.
+2. **Plan neighbours.** The enlarged-face dialog lists which face joins each edge, and each
+   edge's true and cut length.
+3. **Tape and fold.** Bring neighbouring panels together so their inner (back) edges touch, and
+   run masking tape across the groove on the _outer_ faces to hold them. Build strips or flowers of
+   panels this way; the tape holds the joints while the glue sets.
+4. **Fillet the inside corner.** Run epoxy or thick CA glue along the inside of each joint, where
+   the back faces meet. For plywood, PVA with a bead along the corner works too, given time to
+   cure.
 5. Close the last few panels carefully; reaching inside gets harder as the globe closes. Leaving
    one panel loose until the end makes it easier.
 

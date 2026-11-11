@@ -26,6 +26,7 @@ export function useProjectionSync(): void {
   const layerStyles = useAppStore((s) => s.layerStyles)
   const graticuleIntervalDeg = useAppStore((s) => s.graticuleIntervalDeg)
   const kerfMm = useAppStore((s) => (s.kerfEnabled ? s.kerfMm : 0))
+  const thicknessMm = useAppStore((s) => s.thicknessMm)
   const dragging = useAppStore((s) => s.dragging)
   const latest = useRef(0)
   const wasDragging = useRef(false)
@@ -53,6 +54,8 @@ export function useProjectionSync(): void {
             rotation,
             layerStyles,
             graticuleIntervalDeg,
+            kerfMm,
+            thicknessMm,
           })
           .then((r) => {
             if (id !== latest.current) return
@@ -79,6 +82,7 @@ export function useProjectionSync(): void {
     layerStyles,
     graticuleIntervalDeg,
     kerfMm,
+    thicknessMm,
     dragging,
   ])
 
@@ -102,6 +106,7 @@ export function useProjectionSync(): void {
           rotation,
           layerStyles: s.layerStyles,
           graticuleIntervalDeg: s.graticuleIntervalDeg,
+          thicknessMm: s.thicknessMm,
           wantSvg: false,
         })
         .then((r) => {
