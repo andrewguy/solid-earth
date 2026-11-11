@@ -3,8 +3,23 @@ import { clipRingToCone } from './clip/polygon'
 import { clipPolylineToCone } from './clip/polyline'
 import type { SphereRings } from './geo/lines'
 import type { FillLayerId, LineSourceId } from './layers'
+import {
+  BUTT,
+  type JointOptions,
+  fingerParams,
+  fingerSafeInterior,
+  fingeredOutline,
+} from './joints'
 import { panelOutline, polygonConePlanes } from './panel'
-import { fromPaths64, offsetPolygon, subtract, toPaths64, unionPositive } from './planar/clipper'
+import {
+  clipPolylines,
+  fromPaths64,
+  intersection,
+  offsetPolygon,
+  subtract,
+  toPaths64,
+  unionPositive,
+} from './planar/clipper'
 import { roundPolyline } from './planar/round'
 import type { FaceFrame, PolyhedronFrames } from './polyhedron/faces'
 import { gnomonic } from './project/gnomonic'
@@ -45,8 +60,9 @@ export interface FaceArtwork {
    */
   readonly rotation: number
   /**
-   * The panel's outer surface, CCW: the true face, with each edge inset for square-cut butt
-   * joints when a thickness is given (plan §3). Engraving is clipped to it.
+   * The panel as cut (before kerf), CCW: the true face, with each edge inset for square-cut butt
+   * joints when a thickness is given (plan §3), or with finger joints (plan §12). Engraving is
+   * clipped to it, and never runs past the true face.
    */
   readonly outline: readonly Vec2[]
   /** Path to cut: the outline offset outward by kerf/2, or the outline itself (plan §3 Kerf). */
@@ -76,6 +92,8 @@ export interface ArtworkOptions {
    * corners (plan §3). 0 / absent = the true face (zero-thickness panels).
    */
   readonly thicknessMm?: number
+  /** Joint style (plan §12). Default: square-cut butt joints. */
+  readonly joint?: JointOptions
 }
 
 /** Bundle linework and polygons with bounding caps. */
@@ -162,22 +180,34 @@ function projectPolygons(
   return unionPositive(toPaths64(rings))
 }
 
+/** True if `p` is inside (or on) the convex CCW polygon `poly`. */
+function insideConvex(poly: readonly Vec2[], [x, y]: Vec2): boolean {
+  return poly.every(([ax, ay], k) => {
+    const [bx, by] = poly[(k + 1) % poly.length]!
+    return (bx - ax) * (y - ay) - (by - ay) * (x - ax) >= 0
+  })
+}
+
 /** Clip, project, scale and round one face's artwork (plan §4.4). `map` is already rotated. */
 export function buildFaceArtwork(
   frames: PolyhedronFrames,
   faceIndex: number,
   map: PreparedMap,
-  { mmPerUnit, precisionMm, fills: want = {}, north, kerfMm = 0, thicknessMm = 0 }: ArtworkOptions,
+  {
+    mmPerUnit,
+    precisionMm,
+    fills: want = {},
+    north,
+    kerfMm = 0,
+    thicknessMm = 0,
+    joint = BUTT,
+  }: ArtworkOptions,
 ): FaceArtwork {
   const face = frames.faces[faceIndex]
   if (!face) throw new Error(`no face ${faceIndex}`)
   const finish = (pts: Vec2[]) => (precisionMm === null ? pts : roundPolyline(pts, precisionMm))
-  // The true face's cap still bounds the (smaller) panel, so it remains valid for culling.
+  // The true face's cap still bounds the panel's outer surface, so it remains valid for culling.
   const cap = faceCap(face)
-  // Clip on the sphere to the panel's cone: exact, because gnomonic projection maps its planes
-  // to the panel edges. With no thickness these are the face's own (shared-edge exact) planes.
-  const panel = panelOutline(frames, faceIndex, thicknessMm / mmPerUnit)
-  const planes = thicknessMm > 0 ? polygonConePlanes(face, panel) : face.edgePlanes
   const rotation = north ? northUpRotation(face, north) : 0
   const t: OutputTransform = {
     face,
@@ -185,30 +215,58 @@ export function buildFaceArtwork(
     b: Math.sin(rotation) * mmPerUnit,
   }
 
+  const fingers =
+    joint.kind === 'finger' && thicknessMm > 0 ? fingerParams(joint, thicknessMm, mmPerUnit) : null
+  const panel = fingers
+    ? fingeredOutline(frames, faceIndex, fingers)
+    : panelOutline(frames, faceIndex, thicknessMm / mmPerUnit)
+  // Butt panels are convex: clip on the sphere to the panel's cone, which is exact because
+  // gnomonic projection maps its planes to the panel edges (with no thickness these are the
+  // face's own, shared-edge exact planes). Fingered panels are not convex: clip on the sphere to
+  // the true face, then in 2D to the panel's outer surface (plan §12.4 item 2).
+  const planes = !fingers && thicknessMm > 0 ? polygonConePlanes(face, panel) : face.edgePlanes
+  const outlineExact = panel.map((p) => toOutput(t, p))
+  const region = fingers
+    ? intersection(
+        toPaths64([outlineExact]),
+        toPaths64([face.vertices2D.map((p) => toOutput(t, p))]),
+      )
+    : null
+  // Lines entirely inside this convex polygon need no 2D clipping.
+  const safe = fingers
+    ? fingerSafeInterior(frames, faceIndex, fingers)?.map((p) => toOutput(t, p))
+    : null
+
   const lines: Partial<Record<LineSourceId, Vec2[][]>> = {}
   for (const [id, ls] of Object.entries(map.lines) as [LineSourceId, PreparedLine[]][]) {
     const polylines: Vec2[][] = []
+    const toClip: Vec2[][] = []
     for (const line of ls) {
       if (!capsOverlap(cap, line.cap)) continue
       for (const run of clipPolylineToCone(line.points, planes)) {
-        const pts = finish(projectRun(t, run))
-        if (pts.length >= 2) polylines.push(pts)
+        const pts = projectRun(t, run)
+        if (region && !(safe && pts.every((p) => insideConvex(safe, p)))) toClip.push(pts)
+        else polylines.push(pts)
       }
     }
-    lines[id] = polylines
+    if (region) polylines.push(...clipPolylines(toClip, region))
+    lines[id] = polylines.map(finish).filter((pts) => pts.length >= 2)
   }
 
-  const outlineExact = panel.map((p) => toOutput(t, p))
   const fills: Partial<Record<FillLayerId, Vec2[][]>> = {}
   if (want.land || want.ocean || want.lakes) {
-    const polys = (id: PolygonSourceId) => projectPolygons(t, cap, planes, map.polygons[id] ?? [])
+    const polys = (id: PolygonSourceId) => {
+      const projected = projectPolygons(t, cap, planes, map.polygons[id] ?? [])
+      return region ? intersection(projected, region) : projected
+    }
     const land = want.land || want.ocean ? polys('land') : []
     const lakes = want.land || want.lakes ? polys('lakes') : []
     // Land excludes lakes, so a land fill never engraves over open water.
     if (want.land) fills.land = fromPaths64(subtract(land, lakes), precisionMm)
     if (want.lakes) fills.lakes = fromPaths64(lakes, precisionMm)
-    if (want.ocean)
-      fills.ocean = fromPaths64(subtract(toPaths64([outlineExact]), land), precisionMm)
+    if (want.ocean) {
+      fills.ocean = fromPaths64(subtract(region ?? toPaths64([outlineExact]), land), precisionMm)
+    }
   }
 
   const outline = finish(outlineExact)

@@ -173,6 +173,10 @@ describe('ZIP export', () => {
     thicknessMm: 3,
     kerfEnabled: false,
     kerfMm: 0.15,
+    joint: 'butt',
+    fingerWidthMm: 10,
+    fingerTip: 'fill',
+    fingerClearanceMm: 0.1,
   }
 
   it('contains every face SVG plus a versioned project.json', async () => {

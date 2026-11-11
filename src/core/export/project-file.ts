@@ -11,7 +11,9 @@ import type { PolyhedronDef } from '../polyhedron/types'
 import { type Quat, normalizeQuat } from '../quat'
 import {
   DEFAULT_SETTINGS,
+  FINGER_TIPS,
   GRATICULE_INTERVALS,
+  JOINT_KINDS,
   type ProjectSettings,
   RESOLUTIONS,
   type Resolution,
@@ -166,6 +168,14 @@ export function parseProject(text: string): ParsedProject {
     }
   }
 
+  const choice = <T extends string>(key: string, options: readonly T[], fallback: T): T => {
+    const v = raw[key]
+    if (v === undefined) return fallback
+    if ((options as readonly unknown[]).includes(v)) return v as T
+    notes.push(`unknown ${key} ${String(v)}; using ${fallback}`)
+    return fallback
+  }
+
   let resolution: Resolution = d.resolution
   if (raw.resolution !== undefined) {
     if ((RESOLUTIONS as readonly unknown[]).includes(raw.resolution)) {
@@ -190,6 +200,10 @@ export function parseProject(text: string): ParsedProject {
     thicknessMm: num('thicknessMm', (n) => n > 0 && n < 1000, d.thicknessMm),
     kerfEnabled: typeof raw.kerfEnabled === 'boolean' ? raw.kerfEnabled : d.kerfEnabled,
     kerfMm: num('kerfMm', (n) => n >= 0 && n < 5, d.kerfMm),
+    joint: choice('joint', JOINT_KINDS, d.joint),
+    fingerWidthMm: num('fingerWidthMm', (n) => n > 0 && n < 10000, d.fingerWidthMm),
+    fingerTip: choice('fingerTip', FINGER_TIPS, d.fingerTip),
+    fingerClearanceMm: num('fingerClearanceMm', (n) => n > -1 && n < 1, d.fingerClearanceMm),
   }
   return { settings, notes }
 }

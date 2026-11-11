@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 
+import { jointOptions } from '@/core/settings'
 import { MAX_LIVE_FACES } from '@/ui/constants'
 import { projector } from '@/ui/projector-client'
 import { useAppStore } from '@/ui/store'
@@ -27,6 +28,10 @@ export function useProjectionSync(): void {
   const graticuleIntervalDeg = useAppStore((s) => s.graticuleIntervalDeg)
   const kerfMm = useAppStore((s) => (s.kerfEnabled ? s.kerfMm : 0))
   const thicknessMm = useAppStore((s) => s.thicknessMm)
+  const jointKind = useAppStore((s) => s.joint)
+  const fingerWidthMm = useAppStore((s) => s.fingerWidthMm)
+  const fingerTip = useAppStore((s) => s.fingerTip)
+  const fingerClearanceMm = useAppStore((s) => s.fingerClearanceMm)
   const dragging = useAppStore((s) => s.dragging)
   const latest = useRef(0)
   const wasDragging = useRef(false)
@@ -42,6 +47,7 @@ export function useProjectionSync(): void {
     wasDragging.current = dragging
     if (dragging) return
     const id = ++latest.current
+    const joint = jointOptions({ joint: jointKind, fingerWidthMm, fingerTip, fingerClearanceMm })
     const { setComputing, setProjection, setArtwork, setError } = useAppStore.getState()
     setComputing()
     const timer = setTimeout(
@@ -56,6 +62,7 @@ export function useProjectionSync(): void {
             graticuleIntervalDeg,
             kerfMm,
             thicknessMm,
+            joint,
           })
           .then((r) => {
             if (id !== latest.current) return
@@ -83,6 +90,10 @@ export function useProjectionSync(): void {
     graticuleIntervalDeg,
     kerfMm,
     thicknessMm,
+    jointKind,
+    fingerWidthMm,
+    fingerTip,
+    fingerClearanceMm,
     dragging,
   ])
 
@@ -107,6 +118,7 @@ export function useProjectionSync(): void {
           layerStyles: s.layerStyles,
           graticuleIntervalDeg: s.graticuleIntervalDeg,
           thicknessMm: s.thicknessMm,
+          joint: jointOptions(s),
           wantSvg: false,
         })
         .then((r) => {

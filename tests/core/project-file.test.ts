@@ -27,6 +27,10 @@ const custom: ProjectSettings = {
   thicknessMm: 6,
   kerfEnabled: true,
   kerfMm: 0.2,
+  joint: 'finger',
+  fingerWidthMm: 12.5,
+  fingerTip: 'flush',
+  fingerClearanceMm: -0.05,
 }
 
 const raw = (o: object) => JSON.stringify({ app: 'solid-earth', schemaVersion: 1, ...o })
@@ -75,6 +79,10 @@ describe('project files', () => {
         rotation: [0, 0, 0, 0],
         graticuleIntervalDeg: 7,
         kerfMm: 'wide',
+        joint: 'dovetail',
+        fingerTip: 'pointy',
+        fingerWidthMm: 0,
+        fingerClearanceMm: 3,
         layerStyles: {
           coastlines: { color: '#123456', mode: 'sideways', enabled: false },
           nonsense: { enabled: true },
@@ -86,6 +94,11 @@ describe('project files', () => {
     expect(settings.rotation).toEqual(DEFAULT_SETTINGS.rotation)
     expect(settings.graticuleIntervalDeg).toBe(15)
     expect(settings.kerfMm).toBe(DEFAULT_SETTINGS.kerfMm)
+    expect(settings.joint).toBe('butt')
+    expect(settings.fingerTip).toBe(DEFAULT_SETTINGS.fingerTip)
+    expect(settings.fingerWidthMm).toBe(DEFAULT_SETTINGS.fingerWidthMm)
+    expect(settings.fingerClearanceMm).toBe(DEFAULT_SETTINGS.fingerClearanceMm)
+    expect(notes.join(' ')).toMatch(/dovetail/)
     expect(settings.layerStyles.coastlines).toEqual({
       ...DEFAULT_LAYER_STYLES.coastlines,
       enabled: false, // the valid part is kept

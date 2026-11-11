@@ -1,10 +1,13 @@
 import {
+  ClipType,
+  Clipper64,
   EndType,
   FillRule,
   JoinType,
   type Paths64,
   difference,
   inflatePaths,
+  intersect,
   union,
 } from 'clipper2-ts'
 
@@ -42,6 +45,23 @@ export const unionPositive = (rings: Paths64): Paths64 => union(rings, FillRule.
 export const subtract = (subject: Paths64, clip: Paths64): Paths64 =>
   difference(subject, clip, FillRule.NonZero)
 
+export const intersection = (subject: Paths64, clip: Paths64): Paths64 =>
+  intersect(subject, clip, FillRule.NonZero)
+
+/** Clip open polylines (mm) to a region; returns the pieces inside, in mm (unrounded). */
+export function clipPolylines(lines: readonly (readonly Vec2[])[], region: Paths64): Vec2[][] {
+  if (lines.length === 0) return []
+  const c = new Clipper64()
+  c.addOpenSubject(toPaths64(lines))
+  c.addClip(region)
+  const closed: Paths64 = []
+  const open: Paths64 = []
+  c.execute(ClipType.Intersection, FillRule.NonZero, closed, open)
+  return open
+    .map((p) => p.map(({ x, y }): Vec2 => [x / SCALE, y / SCALE]))
+    .filter((p) => p.length >= 2)
+}
+
 /** Signed area of a ring (positive = counter-clockwise, y up). */
 export function ringArea(ring: readonly Vec2[]): number {
   let a = 0
@@ -53,8 +73,9 @@ export function ringArea(ring: readonly Vec2[]): number {
 }
 
 /**
- * Offset a convex CCW polygon outward by `deltaMm` with mitred (sharp) corners, for kerf
- * compensation (plan §6.3). The miter limit allows corners down to ~30° to stay sharp.
+ * Offset a CCW panel outline (convex, or with finger joints) outward by `deltaMm` with mitred
+ * (sharp) corners, for kerf compensation (plan §6.3). The miter limit allows corners down to ~30°
+ * to stay sharp.
  */
 export function offsetPolygon(ring: readonly Vec2[], deltaMm: number): Vec2[] {
   const out = inflatePaths(toPaths64([ring]), deltaMm * SCALE, JoinType.Miter, EndType.Polygon, 4)

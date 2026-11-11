@@ -4,7 +4,13 @@ import type { LayerId, LayerStyle } from '@/core/layers'
 import { type PresetId, isPresetId, preset } from '@/core/polyhedron/presets'
 import type { PolyhedronDef } from '@/core/polyhedron/types'
 import { IDENTITY, type Quat } from '@/core/quat'
-import { DEFAULT_SETTINGS, type ProjectSettings, type Resolution } from '@/core/settings'
+import type { FingerTip } from '@/core/joints'
+import {
+  DEFAULT_SETTINGS,
+  type JointKind,
+  type ProjectSettings,
+  type Resolution,
+} from '@/core/settings'
 import type { PackedFace } from '@/worker/projector'
 
 export interface FaceOutput {
@@ -54,6 +60,10 @@ function fromSettings(s: ProjectSettings) {
     thicknessMm: s.thicknessMm,
     kerfEnabled: s.kerfEnabled,
     kerfMm: s.kerfMm,
+    joint: s.joint,
+    fingerWidthMm: s.fingerWidthMm,
+    fingerTip: s.fingerTip,
+    fingerClearanceMm: s.fingerClearanceMm,
   }
 }
 
@@ -70,6 +80,10 @@ interface AppState {
   thicknessMm: number
   kerfEnabled: boolean
   kerfMm: number
+  joint: JointKind
+  fingerWidthMm: number
+  fingerTip: FingerTip
+  fingerClearanceMm: number
   // UI / derived
   selectedFace: number
   /** Face shown enlarged in the dialog, or null. */
@@ -102,6 +116,10 @@ interface AppState {
   setThicknessMm: (mm: number) => void
   setKerfEnabled: (on: boolean) => void
   setKerfMm: (mm: number) => void
+  setJoint: (joint: JointKind) => void
+  setFingerWidthMm: (mm: number) => void
+  setFingerTip: (tip: FingerTip) => void
+  setFingerClearanceMm: (mm: number) => void
   setComputing: () => void
   setProjection: (p: Omit<Projection, 'faces'> & { svgs: readonly string[] }) => void
   setError: (message: string) => void
@@ -161,6 +179,14 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setKerfMm: (mm) => {
     if (Number.isFinite(mm) && mm >= 0 && mm < 5) set({ kerfMm: mm })
   },
+  setJoint: (joint) => set({ joint }),
+  setFingerWidthMm: (mm) => {
+    if (Number.isFinite(mm) && mm > 0) set({ fingerWidthMm: mm })
+  },
+  setFingerTip: (fingerTip) => set({ fingerTip }),
+  setFingerClearanceMm: (mm) => {
+    if (Number.isFinite(mm) && mm > -1 && mm < 1) set({ fingerClearanceMm: mm })
+  },
   setComputing: () => set({ computing: true }),
   setProjection: ({ svgs, ...rest }) => {
     for (const f of get().projection?.faces ?? []) URL.revokeObjectURL(f.url)
@@ -185,4 +211,8 @@ export const selectSettings = (s: AppState): ProjectSettings => ({
   thicknessMm: s.thicknessMm,
   kerfEnabled: s.kerfEnabled,
   kerfMm: s.kerfMm,
+  joint: s.joint,
+  fingerWidthMm: s.fingerWidthMm,
+  fingerTip: s.fingerTip,
+  fingerClearanceMm: s.fingerClearanceMm,
 })

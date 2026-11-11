@@ -160,7 +160,33 @@ Because the panels only touch along a line, the strength comes from glue on the 
 5. Close the last few panels carefully; reaching inside gets harder as the globe closes. Leaving
    one panel loose until the end makes it easier.
 
-## 9. Troubleshooting
+## 9. Finger joints
+
+Set _Joints_ to **Finger joints** under _Panel geometry_ for interlocking fingers on every edge.
+They line panels up as you assemble and give the glue far more area than a butt joint.
+
+- **Finger width** is the same for every finger. Each edge gets an even number of fingers and
+  slots, with plain stretches at the corners so fingers never collide where panels meet. An edge
+  too short for two fingers stays a butt joint; the enlarged-face dialog shows the count per
+  edge.
+- **Clearance per side** narrows each finger and widens each slot (default 0.1 mm, a slip fit
+  for gluing). A negative value gives a press fit, which is very sensitive to kerf and to your
+  sheet's real thickness, so test on scrap first. Kerf compensation (if on) is applied on top.
+- **Finger tips:**
+  - **Fill joint** (default): fingers reach right through the neighbouring panel and stick out
+    slightly past its surface. Sand them flush for a closed outer surface. The map is never
+    engraved on the part that sticks out, so sanding loses nothing.
+  - **Flush:** nothing sticks out, and small wedge-shaped gaps open at the surface beside each
+    finger.
+
+A laser cuts square edges, so fingers only mate perfectly where panels meet at 90° (a cube).
+At other angles each joint has a small triangular void on the inside, which is a handy glue
+pocket. On very sharp joints (under 90°, like a tetrahedron) a thin gap stays open on the
+outside even with _Fill joint_.
+
+Thickness matters even more than with butt joints: measure your sheet and enter the real value.
+
+## 10. Troubleshooting
 
 - **Panels the wrong size in LightBurn:** check that the import didn't apply a DPI scale. The SVGs
   are in mm (`width="…mm"`).

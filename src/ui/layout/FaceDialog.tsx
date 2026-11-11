@@ -2,6 +2,7 @@ import { Download } from 'lucide-react'
 import { useMemo } from 'react'
 
 import { faceFileName } from '@/core/export/zip'
+import { faceFingers, fingerParams } from '@/core/joints'
 import { faceEdges, panelOutline, vGap } from '@/core/panel'
 import { buildFrames } from '@/core/polyhedron/faces'
 import { longestEdge } from '@/core/pipeline'
@@ -25,6 +26,10 @@ export function FaceDialog() {
   const def = useAppStore((s) => s.polyhedron.def)
   const edgeLengthMm = useAppStore((s) => s.edgeLengthMm)
   const thicknessMm = useAppStore((s) => s.thicknessMm)
+  const finger = useAppStore((s) => s.joint === 'finger')
+  const fingerWidthMm = useAppStore((s) => s.fingerWidthMm)
+  const fingerTip = useAppStore((s) => s.fingerTip)
+  const fingerClearanceMm = useAppStore((s) => s.fingerClearanceMm)
   const frames = useMemo(() => buildFrames(def), [def])
   const mmPerUnit = edgeLengthMm / longestEdge(frames)
   const edges = index === null ? [] : faceEdges(frames, index)
@@ -41,6 +46,16 @@ export function FaceDialog() {
       return null
     }
   }, [frames, index, thicknessMm, mmPerUnit])
+  // Finger segments per edge (finger mode only).
+  const fingerCounts = useMemo(() => {
+    if (index === null || !finger) return null
+    const p = fingerParams(
+      { widthMm: fingerWidthMm, tip: fingerTip, clearanceMm: fingerClearanceMm },
+      thicknessMm,
+      mmPerUnit,
+    )
+    return faceFingers(frames, index, p).map((l) => l.count)
+  }, [frames, index, finger, fingerWidthMm, fingerTip, fingerClearanceMm, thicknessMm, mmPerUnit])
   const face = index === null ? undefined : projection?.faces[index]
   const filename = index === null ? '' : faceFileName(projection?.shape ?? 'shape', index)
 
@@ -66,7 +81,7 @@ export function FaceDialog() {
               <tr className="text-left">
                 <th className="font-normal">Joins face</th>
                 <th className="font-normal">True edge</th>
-                <th className="font-normal">Cut edge</th>
+                <th className="font-normal">{fingerCounts ? 'Segments' : 'Cut edge'}</th>
                 <th className="font-normal">Dihedral</th>
                 <th className="font-normal">Inset</th>
                 <th className="font-normal">Outer groove</th>
@@ -76,11 +91,20 @@ export function FaceDialog() {
               {edges.map((e) => {
                 const gap = vGap(e.dihedral, thicknessMm)
                 const cut = cutLengths?.[e.k]
+                const segments = fingerCounts?.[e.k]
                 return (
                   <tr key={e.k}>
                     <td>{String(e.neighbour).padStart(2, '0')}</td>
                     <td>{(e.length * mmPerUnit).toFixed(2)} mm</td>
-                    <td>{cut === undefined ? '–' : `${cut.toFixed(2)} mm`}</td>
+                    <td>
+                      {segments !== undefined
+                        ? segments === 0
+                          ? 'butt'
+                          : segments
+                        : cut === undefined
+                          ? '–'
+                          : `${cut.toFixed(2)} mm`}
+                    </td>
                     <td>{e.dihedralDeg.toFixed(2)}°</td>
                     <td>{gap.insetMm.toFixed(2)} mm</td>
                     <td>

@@ -38,7 +38,7 @@ A client-side web app that takes vector world-map data (countries, coastlines, r
 3. Bevel joints.
 4. Nested sheet export for a given laser bed size.
 5. Internal frame/connector generation.
-6. Finger joints.
+6. Finger joints. **Scoped 2026-11-11; see §12.**
 7. DXF export.
 8. Custom GeoJSON layers (e.g. travel routes).
 9. Rotation presets and optimiser (e.g. vertex at north pole, minimise land cut by edges).
@@ -339,6 +339,7 @@ tests/                  # vitest unit + fast-check properties
 | 10. Persistence & polish | Done |
 | Post-R1: Archimedean presets | Done: all 13 Archimedean solids (incl. chiral snubs), picker grouped by family |
 | Post-R1: Catalan presets | Done: all 13 Catalan solids, as polar duals of the Archimedean presets |
+| Post-R1: Finger joints | Done (§12): global butt/finger choice, fill/flush tips, clearance; `src/core/joints.ts` |
 
 ### Changes from the plan
 
@@ -380,3 +381,80 @@ tests/                  # vitest unit + fast-check properties
   d3-geo-polygon `geoIcosahedral`.
 - CI and Pages deployment (milestone 9).
 
+---
+
+## 12. Finger joints (scoped and implemented 2026-11-11)
+
+The main goal is **strength and alignment**: panels lock into place, and glue gets far more
+area than the butt joint's single inner-corner line. Appearance comes second.
+
+### 12.1 Geometry constraint
+
+Square (laser) cuts only mate perfectly at a 90° dihedral. On any other edge, a finger's
+square-cut end crosses the neighbouring panel at the angle V = 180° − dihedral. Each finger then
+has to accept one of three flaws: it sticks out past the outer surface, it leaves a small wedge
+gap, or it stops short. Along the edge itself, finger and slot widths match exactly at any angle.
+
+The two panels overlap over a length of about t / sin(V). For 3 mm material that is 3 mm on a
+cube, 4.5 mm on an icosahedron and about 11 mm on the disdyakis triacontahedron (V ≈ 16°), so
+fingers get long and thin at shallow joints.
+
+### 12.2 Decisions
+
+| Topic | Decision |
+|---|---|
+| Joint selection | One **global** joint type: butt (default) or finger. No per-edge overrides yet. |
+| Which edges | **Every edge**, whatever its angle. No cut-off and no warning. The only exception is an edge too short for two fingers once the corner clearances are taken off; it stays a butt joint (§3 Butt joint geometry). |
+| Finger tip | Two modes: **Fill joint (sand flush)**, where fingers fill the overlap and stick out slightly, to be sanded off; and **Flush**, where nothing sticks out and small wedge gaps open beside each finger. |
+| Finger size | **Fixed width in mm** for every finger. Default about 10 mm (roughly 3× thickness). |
+| Pattern | **Even number of segments per edge.** Each panel takes the even-numbered segments counting counter-clockwise from its own side. The patterns always interlock, no edge needs a global assignment, and congruent faces (e.g. every Catalan solid) still give identical panels. Leftover length is split equally between the two ends. |
+| Corners | **Computed clearance** per edge end, plus a small margin, so fingers never collide where 3+ panels meet. The ends of each edge stay as plain butt joint. |
+| Fit | Adjustable **clearance**, which can go negative for a press fit. Default slip fit of about 0.1 mm per side. |
+| Kerf | **Independent of clearance.** Clearance shapes the fingers; kerf compensation (if on) then offsets the whole cut path as now. |
+| Engraving | The map runs **onto finger tops**. It is clipped to the panel's real outer surface, but never past the true edge, so sanding protruding tips loses nothing. |
+
+### 12.3 Out of scope for the first version
+
+Test-fit coupon, shallow-edge warning, edge labels, a 3D preview of the real fingered panels,
+per-edge joint overrides.
+
+### 12.4 Design work before implementation
+
+1. **Tip geometry.** Work out finger length and slot depth in cross-section for each tip mode.
+   Tests check that no material overlaps and that the flaw lands where the mode says.
+2. **Clipping engraving to a non-convex outline.** A fingered panel is no longer convex, so
+   clipping on the sphere against the panel's cone planes isn't enough on its own. Clip on the
+   sphere to the true face as now, then clip in 2D to the fingered outline with Clipper2, which
+   handles open polylines.
+3. **Corner clearance.** How far each edge's overlap region reaches into the neighbouring
+   edges' overlap regions at a vertex. It needs care on solids with mixed dihedral angles.
+4. **Defaults.** Confirm the finger width and clearance defaults against real cuts.
+
+### 12.5 Implementation notes
+
+- **Cross-section** (`fingerProfile`). Positions are measured in the face plane, inward from the
+  true edge, with negative meaning beyond it. Finger tip: `min(0, t·cot θ)` (fill) or
+  `max(0, t·cot θ)` (flush). Notch depth: the smallest value that clears the finger, found by
+  testing every axis that can separate the two cross-sections. For obtuse joints that comes to
+  t·sin θ (flush) or t / sin θ (fill). At 90° both modes give an ordinary box joint. Clearance
+  is added to the notch depth, and also narrows fingers and widens slots along the edge.
+- **Acute joints (θ < 90°)**: square cuts can't close the outer surface even in fill mode. The
+  neighbour's notch face leans the wrong way, so a gap of t·cot θ stays open (about 1.06 mm for
+  3 mm material on a tetrahedron). Obtuse joints close completely. Both modes leave a small
+  triangular void on the inside (a glue pocket).
+- **Corner clearance** (`cornerClearance`) is conservative. It keeps each joint's whole overlap
+  band clear of (a) the band of the face's other edge at the vertex, in both face planes, and
+  (b) the full slab of every other face at the vertex, plus 0.5 mm and the clearance. Typical
+  values with 3 mm material: 3.7 mm (cube), 8–8.5 mm (truncated icosahedron, rhombic
+  triacontahedron), 10.1 mm (icosahedron). A tighter test against the actual finger and notch
+  shapes could fit an extra finger pair on short edges.
+- **Engraving**: in finger mode it is clipped on the sphere to the true face, then in 2D (Clipper2,
+  open paths for lines) to the outline ∩ true face. Lines entirely inside a convex safe interior
+  skip the 2D clip. 50m, all layers, truncated icosahedron: about 565 ms against 364 ms for butt.
+- **Default tip**: fill (strength first, §12).
+- **Tests** (`tests/core/joints.test.ts`): cross-section properties over random dihedral angles
+  (no overlap, notch as shallow as possible, flush never crosses the neighbour's outer surface,
+  fill closes it when θ ≥ 90°, gap = t·cot θ when acute); a 3D check that no finger sample
+  point lies inside any other panel, across 8 shapes and two finger widths; outlines are simple;
+  layouts match on both panels; congruent Catalan faces give identical panels; and engraving
+  stays on the outer surface.

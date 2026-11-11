@@ -1,3 +1,4 @@
+import type { FingerTip, JointOptions } from './joints'
 import { DEFAULT_LAYER_STYLES, type LayerId, type LayerStyle } from './layers'
 import { preset } from './polyhedron/presets'
 import type { PolyhedronDef } from './polyhedron/types'
@@ -29,6 +30,30 @@ export interface ProjectSettings {
   /** Kerf compensation (plan §3): off by default so LightBurn's own offset can be used. */
   readonly kerfEnabled: boolean
   readonly kerfMm: number
+  /** Joint style (plan §12): square-cut butt joints, or finger joints. */
+  readonly joint: JointKind
+  readonly fingerWidthMm: number
+  readonly fingerTip: FingerTip
+  /** Per side; negative for a press fit. */
+  readonly fingerClearanceMm: number
+}
+
+export const JOINT_KINDS = ['butt', 'finger'] as const
+export type JointKind = (typeof JOINT_KINDS)[number]
+export const FINGER_TIPS: readonly FingerTip[] = ['fill', 'flush']
+
+/** The joint options the pipeline needs, from the project settings. */
+export function jointOptions(
+  s: Pick<ProjectSettings, 'joint' | 'fingerWidthMm' | 'fingerTip' | 'fingerClearanceMm'>,
+): JointOptions {
+  return s.joint === 'finger'
+    ? {
+        kind: 'finger',
+        widthMm: s.fingerWidthMm,
+        tip: s.fingerTip,
+        clearanceMm: s.fingerClearanceMm,
+      }
+    : { kind: 'butt' }
 }
 
 export const GRATICULE_INTERVALS = [5, 10, 15, 20, 30] as const
@@ -45,4 +70,8 @@ export const DEFAULT_SETTINGS: ProjectSettings = {
   thicknessMm: 3,
   kerfEnabled: false,
   kerfMm: 0.15,
+  joint: 'butt',
+  fingerWidthMm: 10,
+  fingerTip: 'fill',
+  fingerClearanceMm: 0.1,
 }

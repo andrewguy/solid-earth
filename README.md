@@ -28,6 +28,9 @@ settings, kerf, and assembly.
 - **Square-cut butt joints:** panel edges are inset for your material thickness so neighbouring
   panels meet at their inner corners; the panel info lists dihedral angles, insets and the width
   of the outer V-groove.
+- **Finger joints (optional):** interlocking fingers on every edge, sized for your material and
+  the angle at each joint, with adjustable finger width and clearance and a choice of fingers
+  that fill the joint (sand flush) or sit flush.
 - **Export:** per-face SVG, or a ZIP of all faces plus `project.json`.
 - **Projects:** autosaved in the browser; open/save project files.
 

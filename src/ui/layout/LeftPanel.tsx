@@ -3,6 +3,7 @@ import { type ReactNode, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
 import { rotationReadout } from '@/core/geo/rotation'
+import { type FingerTip, fingerProfile } from '@/core/joints'
 import { dihedralGroups } from '@/core/panel'
 import { buildFrames } from '@/core/polyhedron/faces'
 import { importPolyhedron } from '@/core/polyhedron/import'
@@ -10,7 +11,13 @@ import { PolyhedronError } from '@/core/polyhedron/preprocess'
 import { PRESETS, PRESET_IDS, type PresetFamily, isPresetId } from '@/core/polyhedron/presets'
 import type { PolyhedronDef } from '@/core/polyhedron/types'
 import { distance, length } from '@/core/vec3'
-import { RESOLUTIONS, type Resolution } from '@/core/settings'
+import {
+  FINGER_TIPS,
+  JOINT_KINDS,
+  type JointKind,
+  RESOLUTIONS,
+  type Resolution,
+} from '@/core/settings'
 
 import { Button } from '@/ui/components/ui/button'
 import { Input } from '@/ui/components/ui/input'
@@ -36,6 +43,7 @@ import { useAppStore } from '@/ui/store'
 // their milestones land.
 
 const CUSTOM = 'custom'
+const DEG_TO_RAD = Math.PI / 180
 
 const PRESET_FAMILIES: readonly { family: PresetFamily; label: string }[] = [
   { family: 'platonic', label: 'Platonic solids' },
@@ -58,7 +66,11 @@ function circumDiameterMm(def: PolyhedronDef, edgeMm: number): number {
 function PanelInfo() {
   const def = useAppStore((s) => s.polyhedron.def)
   const thicknessMm = useAppStore((s) => s.thicknessMm)
+  const finger = useAppStore((s) => s.joint === 'finger')
+  const fingerTip = useAppStore((s) => s.fingerTip)
+  const clearanceMm = useAppStore((s) => s.fingerClearanceMm)
   const groups = useMemo(() => dihedralGroups(buildFrames(def), thicknessMm), [def, thicknessMm])
+  const mm = (x: number) => `${x.toFixed(2)} mm`
   return (
     <>
       <table className="w-full text-xs">
@@ -67,27 +79,125 @@ function PanelInfo() {
             <th className="font-normal">Edges</th>
             <th className="font-normal">Dihedral</th>
             <th className="font-normal">V</th>
-            <th className="text-right font-normal">Inset</th>
-            <th className="text-right font-normal">Groove</th>
+            <th className="text-right font-normal">{finger ? 'Tip' : 'Inset'}</th>
+            <th className="text-right font-normal">{finger ? 'Notch' : 'Groove'}</th>
           </tr>
         </thead>
         <tbody className="font-mono">
-          {groups.map((g) => (
-            <tr key={g.dihedralDeg.toFixed(2)}>
-              <td>{g.edgeCount}</td>
-              <td>{g.dihedralDeg.toFixed(2)}°</td>
-              <td>{g.vGapDeg.toFixed(2)}°</td>
-              <td className="text-right">{g.insetMm.toFixed(2)} mm</td>
-              <td className="text-right">{g.grooveMm.toFixed(2)} mm</td>
-            </tr>
-          ))}
+          {groups.map((g) => {
+            const prof = finger
+              ? fingerProfile(g.dihedralDeg * DEG_TO_RAD, thicknessMm, fingerTip, clearanceMm)
+              : null
+            return (
+              <tr key={g.dihedralDeg.toFixed(2)}>
+                <td>{g.edgeCount}</td>
+                <td>{g.dihedralDeg.toFixed(2)}°</td>
+                <td>{g.vGapDeg.toFixed(2)}°</td>
+                <td className="text-right">{mm(prof ? prof.tip : g.insetMm)}</td>
+                <td className="text-right">{mm(prof ? prof.notch : g.grooveMm)}</td>
+              </tr>
+            )
+          })}
         </tbody>
       </table>
       <p className="text-xs text-muted-foreground">
-        Butt joints: panels are cut square, with each edge pulled in by the inset so neighbouring
-        panels meet at their inner corners ({thicknessMm} mm material). A V-groove of angle V opens
-        on the outside; the map lines up across it, but the groove itself is not engraved.
+        {finger ? (
+          <>
+            Finger joints ({thicknessMm} mm material): measured inward from the true edge, the
+            finger ends at Tip (negative: it sticks out past the edge) and the slots go in to Notch.
+            Plain stretches at the corners are butt joints.
+          </>
+        ) : (
+          <>
+            Butt joints: panels are cut square, with each edge pulled in by the inset so
+            neighbouring panels meet at their inner corners ({thicknessMm} mm material). A V-groove
+            of angle V opens on the outside; the map lines up across it, but the groove itself is
+            not engraved.
+          </>
+        )}
       </p>
+    </>
+  )
+}
+
+const isJointKind = (v: string): v is JointKind => (JOINT_KINDS as readonly string[]).includes(v)
+const isFingerTip = (v: string): v is FingerTip => (FINGER_TIPS as readonly string[]).includes(v)
+
+/** Joint style and finger settings (plan §12). */
+function JointSettings() {
+  const joint = useAppStore((s) => s.joint)
+  const setJoint = useAppStore((s) => s.setJoint)
+  const fingerWidthMm = useAppStore((s) => s.fingerWidthMm)
+  const setFingerWidthMm = useAppStore((s) => s.setFingerWidthMm)
+  const fingerTip = useAppStore((s) => s.fingerTip)
+  const setFingerTip = useAppStore((s) => s.setFingerTip)
+  const fingerClearanceMm = useAppStore((s) => s.fingerClearanceMm)
+  const setFingerClearanceMm = useAppStore((s) => s.setFingerClearanceMm)
+  return (
+    <>
+      <div className="grid grid-cols-[1fr_10rem] items-center gap-2">
+        <Label htmlFor="joint">Joints</Label>
+        <Select
+          value={joint}
+          onValueChange={(v) => {
+            if (isJointKind(v)) setJoint(v)
+          }}
+        >
+          <SelectTrigger id="joint" className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="butt">Butt (square cut)</SelectItem>
+            <SelectItem value="finger">Finger joints</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      {joint === 'finger' && (
+        <>
+          <NumberField
+            id="finger-width"
+            label="Finger width"
+            unit="mm"
+            value={fingerWidthMm}
+            onCommit={setFingerWidthMm}
+            step={0.5}
+          />
+          <NumberField
+            id="finger-clearance"
+            label="Clearance per side"
+            unit="mm"
+            value={fingerClearanceMm}
+            onCommit={setFingerClearanceMm}
+            step={0.01}
+            min={-0.5}
+            accept={(v) => v > -1 && v < 1}
+          />
+          <div className="grid grid-cols-[1fr_10rem] items-center gap-2">
+            <Label htmlFor="finger-tip">Finger tips</Label>
+            <Select
+              value={fingerTip}
+              onValueChange={(v) => {
+                if (isFingerTip(v)) setFingerTip(v)
+              }}
+            >
+              <SelectTrigger id="finger-tip" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="fill">Fill joint</SelectItem>
+                <SelectItem value="flush">Flush</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {fingerTip === 'fill'
+              ? 'Fingers fill the joint and stick out slightly past the neighbouring panel: sand them flush for a closed outer surface.'
+              : 'Nothing sticks out; small wedge-shaped gaps open at the outer surface beside each finger.'}{' '}
+            Clearance narrows fingers and widens slots; use a negative value for a press fit. Edges
+            too short for two fingers stay butt joints.
+          </p>
+        </>
+      )}
     </>
   )
 }
@@ -218,14 +328,19 @@ function NumberField({
   value,
   onCommit,
   step,
+  min = 0,
+  accept = (v) => v > 0,
 }: {
   id: string
   label: string
   unit: string
   value: number
-  /** Called with valid positive values as the user types; omit for a placeholder field. */
+  /** Called with accepted values as the user types; omit for a placeholder field. */
   onCommit?: (value: number) => void
   step: number
+  min?: number
+  /** Which values to commit. Default: positive. */
+  accept?: (value: number) => boolean
 }) {
   // Keep a draft so the field can be cleared or hold partial input while typing.
   const [draft, setDraft] = useState(String(value))
@@ -238,12 +353,12 @@ function NumberField({
           type="number"
           value={draft}
           step={step}
-          min={0}
+          min={min}
           className="pr-9"
           onChange={(e) => {
             setDraft(e.target.value)
             const v = e.target.valueAsNumber
-            if (onCommit && Number.isFinite(v) && v > 0) onCommit(v)
+            if (onCommit && Number.isFinite(v) && accept(v)) onCommit(v)
           }}
           onBlur={() => setDraft(String(value))}
         />
@@ -342,6 +457,7 @@ export function LeftPanel() {
           </Section>
 
           <Section title="Panel geometry">
+            <JointSettings />
             <PanelInfo />
           </Section>
 

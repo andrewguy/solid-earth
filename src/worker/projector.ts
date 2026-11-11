@@ -31,6 +31,7 @@ import {
 } from '@/core/pipeline'
 import { type PolyhedronFrames, buildFrames } from '@/core/polyhedron/faces'
 import type { PolyhedronDef } from '@/core/polyhedron/types'
+import { BUTT, type JointOptions } from '@/core/joints'
 import { type Quat, rotate } from '@/core/quat'
 import type { Resolution } from '@/core/settings'
 import type { Vec2 } from '@/core/vec3'
@@ -57,6 +58,8 @@ export interface ProjectRequest {
   readonly kerfMm?: number
   /** Material thickness in mm; panel edges are inset for square-cut butt joints. 0 = off. */
   readonly thicknessMm?: number
+  /** Joint style; default square-cut butt joints. */
+  readonly joint?: JointOptions
   /**
    * false for interactive previews (dragging): skip SVG serialisation and rounding, and only
    * return packed artwork for the 3D textures. Default true.
@@ -190,6 +193,7 @@ export class Projector {
     const fills = fillsNeeded(req.layerStyles)
     const kerfMm = req.kerfMm ?? 0
     const thicknessMm = req.thicknessMm ?? 0
+    const joint = req.joint ?? BUTT
     const key = JSON.stringify([
       req.polyhedron.id,
       req.resolution,
@@ -200,6 +204,7 @@ export class Projector {
       req.graticuleIntervalDeg,
       kerfMm,
       thicknessMm,
+      joint,
     ])
     let prepareMs = 0
     let projectMs = 0
@@ -214,6 +219,7 @@ export class Projector {
         fills,
         kerfMm,
         thicknessMm,
+        joint,
         north: rotate(req.rotation, [0, 0, 1]),
       })
       projectMs = performance.now() - t1
