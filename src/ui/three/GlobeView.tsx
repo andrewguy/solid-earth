@@ -110,7 +110,7 @@ export default function GlobeView() {
       camera={{ fov: 35, near: 0.01, far: 1000, up: [0, 0, 1], position: [3.6, 1.2, 1.6] }}
       className="touch-none"
     >
-      <ambientLight intensity={2.2} />
+      <ambientLight intensity={1.2} />
       <directionalLight position={[4, 2, 6]} intensity={1.4} />
       <directionalLight position={[-3, -4, -2]} intensity={0.5} />
       <Solid />
