@@ -185,16 +185,35 @@ export class Placer {
       ]
       const clips = obstacles.filter((o) => o.minX <= xw && o.maxX >= x0).map((o) => o.path)
       const free = clips.length ? difference(window, clips, FillRule.NonZero) : window
-      let best: { x: number; y: number } | null = null
-      for (const path of free) {
-        for (const v of path) {
-          if (!best || v.x < best.x || (v.x === best.x && v.y < best.y)) best = v
-        }
-      }
+      const best = leftmostVertex(free, x0, y0, x1, y1)
       if (best || xw >= x1) return best
       width *= 2
     }
   }
+}
+
+/**
+ * The leftmost, then lowest, vertex of a free region, clamped to [x0, x1] × [y0, y1]. Clipper
+ * rounds the intersection points it creates to whole units, so a vertex can land one unit outside
+ * the window; clamping moves it back by at most that, which NFP_GROWTH's 2-unit rounding
+ * allowance covers.
+ */
+export function leftmostVertex(
+  free: Paths64,
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+): { x: number; y: number } | null {
+  let best: { x: number; y: number } | null = null
+  for (const path of free) {
+    for (const v of path) {
+      const x = Math.min(Math.max(v.x, x0), x1)
+      const y = Math.min(Math.max(v.y, y0), y1)
+      if (!best || x < best.x || (x === best.x && y < best.y)) best = { x, y }
+    }
+  }
+  return best
 }
 
 /** Place every part once with a fresh placer (convenience for one-off placements and tests). */

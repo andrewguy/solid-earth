@@ -61,6 +61,12 @@ export interface NestSettings {
   readonly population: number
   /** PRNG seed: the same input and seed give the same layout. */
   readonly seed: number
+  /**
+   * Draw the sheet boundary on LightBurn's T1 tool layer. Off by default: LightBurn only imports
+   * onto tool layers with "Allow importing to Tool Layers" enabled, and otherwise puts the
+   * outline on layer 05, which is output (plan §13.6).
+   */
+  readonly sheetOutline: boolean
 }
 
 export const DEFAULT_NEST_SETTINGS: NestSettings = {
@@ -74,6 +80,7 @@ export const DEFAULT_NEST_SETTINGS: NestSettings = {
   generations: 20,
   population: 10,
   seed: 1,
+  sheetOutline: false,
 }
 
 /**

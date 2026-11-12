@@ -47,6 +47,7 @@ describe('nest settings defaults', () => {
       rotationStepDeg: 15,
       generations: 20,
       population: 10,
+      sheetOutline: false, // outline off: it lands on an output layer without LightBurn's setting
     })
   })
 
@@ -114,6 +115,7 @@ describe('nestInputKey', () => {
     ['step outside free mode', restricted, withNest(restricted, { rotationStepDeg: 45 })],
     ['optimiser settings', base, withNest(base, { generations: 500, population: 50, seed: 9 })],
     ['sheet preset label', base, withNest(base, { sheetPreset: 'custom' })],
+    ['sheet outline', base, withNest(base, { sheetOutline: true })],
     ['the saved layout', base, { ...base, nestLayout: layoutFor(base) }],
   ])('ignores %s', (_, a, b) => {
     expect(key(b)).toBe(key(a))
@@ -166,6 +168,7 @@ describe('project files: nesting', () => {
         generations: 200,
         population: 30,
         seed: 42,
+        sheetOutline: true,
       },
     }
     const saved = { ...s, nestLayout: layoutFor(s) }

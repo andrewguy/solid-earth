@@ -174,6 +174,7 @@ function parseNest(raw: unknown, notes: string[]): NestSettings {
     generations: num('generations', (n) => isInt(n) && n >= 1 && n <= 100000),
     population: num('population', (n) => isInt(n) && n >= 2 && n <= 1000),
     seed: num('seed', (n) => isInt(n) && n >= 0 && n <= 0xffffffff),
+    sheetOutline: typeof raw.sheetOutline === 'boolean' ? raw.sheetOutline : d.sheetOutline,
   }
 }
 

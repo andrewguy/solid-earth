@@ -23,8 +23,8 @@ function hash53(s: string): string {
  * A stable key for everything a sheet layout depends on (plan §13.1 Trigger): the panel outlines
  * (shape, size, thickness, effective kerf and joint) and the sheet (size, gap, margin, rotation
  * mode and step). In the restricted rotation modes the globe rotation is included too, because
- * placements are relative to north-up. Optimiser settings (generations, population, seed) are
- * excluded: changing them doesn't make an existing layout wrong.
+ * placements are relative to north-up. Optimiser settings (generations, population, seed) and the
+ * sheet outline are excluded: changing them doesn't make an existing layout wrong.
  */
 export function nestInputKey(s: ProjectSettings): string {
   const n = s.nest

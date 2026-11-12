@@ -340,7 +340,7 @@ tests/                  # vitest unit + fast-check properties
 | Post-R1: Archimedean presets | Done: all 13 Archimedean solids (incl. chiral snubs), picker grouped by family |
 | Post-R1: Catalan presets | Done: all 13 Catalan solids, as polar duals of the Archimedean presets |
 | Post-R1: Finger joints | Done (§12): global butt/finger choice, fill/flush tips, clearance; `src/core/joints.ts` |
-| Post-R1: Sheet nesting | In progress (§13): steps 1–9 done (`src/core/panel-shape.ts`, `src/core/nest/`, `src/worker/nester*.ts`, `src/ui/nester-client.ts`, `src/core/export/svg.ts`, `src/worker/projector.ts`) |
+| Post-R1: Sheet nesting | In progress (§13): steps 1–10 done (`src/core/panel-shape.ts`, `src/core/nest/`, `src/worker/nester*.ts`, `src/ui/nester-client.ts`, `src/core/export/svg.ts`, `src/worker/projector.ts`) |
 
 ### Changes from the plan
 
@@ -684,9 +684,22 @@ several workers.
   drawn on LightBurn's **T1 tool layer, `#F36926`**, which is never output (official palette
   reference). **Caveat:** LightBurn only imports onto tool layers with *Allow importing to Tool
   Layers* enabled. Otherwise it maps T1 to the nearest palette colour, layer 05 (`#FF8000`),
-  which *is* an output layer. The docs need to say this, and a toggle may be wanted (step 11).
+  which *is* an output layer. **Decided 2026-11-12:** `NestSettings.sheetOutline`, **off by
+  default** and left out of the input key. The README must explain the LightBurn setting.
 - **Projector integration (step 9).** `ProjectRequest.sheets = { layout, nest, outline }` adds
   `ProjectResult.sheetSvgs`, or null without a layout or in preview mode. Sheets come from the
   cached artwork, so a new layout or outline toggle only re-serialises SVG. The UI must send only
   a current layout. As a safety net, the projector rejects a layout with faces the shape doesn't
   have.
+- **ZIP and warnings (step 10).** Sheets are saved as `<shape>_sheet-NN.svg`, numbered from 01
+  like the Sheets tab. `sheetsForZip(settings, sheetSvgs)` (`src/core/nest/status.ts`) includes
+  sheets only for a current layout whose rendered SVG count matches its sheet count, so a render
+  still in flight never exports the previous layout's sheets. Otherwise it returns a warning
+  (stale, or still rendering). `nestWarnings(settings)` reports a stale layout and lists faces
+  that don't fit.
+- **Clipper rounding at the window edge (fixed in step 10).** The placement property test found
+  a padded part 0.00057 mm outside the bin. Clipper rounds the intersection vertices it creates
+  to whole units, so one can land a unit outside the window. `leftmostVertex` now clamps the
+  chosen vertex into the window. That moves it at most one unit, which NFP_GROWTH's 2-unit
+  rounding allowance covers. The counterexample is kept as a regression test, and a soak at 10×
+  the usual property runs passes.

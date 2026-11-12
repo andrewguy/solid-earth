@@ -13,6 +13,7 @@ import {
   type Placed,
   Placer,
   fitness,
+  leftmostVertex,
   placeParts,
   placedPolygon,
   toLayout,
@@ -199,6 +200,29 @@ describe('placeParts', () => {
     },
   )
 
+  it('keeps parts in the bin when Clipper rounds a vertex just outside the window', () => {
+    // Regression (found by the property test above): a rounded intersection vertex one unit
+    // below the window put a padded part 0.00057 mm outside the bin.
+    const nest = { ...DEFAULT_NEST_SETTINGS, rotationMode: 'none' as const, gapMm: 4, marginMm: 1 }
+    const { panels, prep, placer } = setup('rhombic-triacontahedron', nest, {
+      edgeMm: 60,
+      kerfMm: 0.15,
+    })
+    const order = [
+      13, 17, 0, 20, 21, 27, 7, 4, 18, 3, 15, 24, 28, 12, 11, 6, 1, 10, 29, 9, 19, 22, 2, 5, 14, 16,
+      23, 8, 25, 26,
+    ]
+    checkPlacement(
+      panels,
+      prep,
+      nest,
+      placer.place(
+        order,
+        order.map(() => 0),
+      ),
+    )
+  })
+
   it('is deterministic', () => {
     const nest = { ...DEFAULT_NEST_SETTINGS, sheetWidthMm: 400, sheetHeightMm: 300 }
     const { prep } = setup('truncated-icosahedron', nest, { edgeMm: 60 })
@@ -303,11 +327,7 @@ function naivePlace(prep: PreparedParts, order: number[], angles: number[]): Pla
           .get(o.shape, o.angles[p.angle]!.alpha, part.shape, beta)
           .map(([x, y]) => ({ x: Math.round((x + p.x) * SCALE), y: Math.round((y + p.y) * SCALE) }))
       })
-      let best: { x: number; y: number } | null = null
-      for (const path of difference(rect, nfps, FillRule.NonZero)) {
-        for (const v of path)
-          if (!best || v.x < best.x || (v.x === best.x && v.y < best.y)) best = v
-      }
+      const best = leftmostVertex(difference(rect, nfps, FillRule.NonZero), x0, y0, x1, y1)
       if (best)
         placed = { part: index, angle: angles[index]!, x: best.x / SCALE, y: best.y / SCALE }
     }

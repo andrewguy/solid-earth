@@ -2,7 +2,7 @@ import JSZip from 'jszip'
 import { describe, expect, it, vi } from 'vitest'
 
 import { PROJECT_SCHEMA_VERSION, serializeProject } from '@/core/export/project-file'
-import { buildFacesZip, faceFileName, zipFileName } from '@/core/export/zip'
+import { buildFacesZip, faceFileName, sheetFileName, zipFileName } from '@/core/export/zip'
 import { DEFAULT_LAYER_STYLES } from '@/core/layers'
 import { DEFAULT_NEST_SETTINGS } from '@/core/nest/types'
 import { icosahedron, preset } from '@/core/polyhedron/presets'
@@ -264,5 +264,15 @@ describe('ZIP export', () => {
     expect(project.schemaVersion).toBe(PROJECT_SCHEMA_VERSION)
     expect(project).toMatchObject(settings)
     expect(zipFileName('icosahedron')).toBe('icosahedron_faces.zip')
+  })
+
+  it('adds sheet SVGs numbered from 01', async () => {
+    const svgs = Array.from({ length: 20 }, (_, i) => `<svg id="${i}"/>`)
+    const sheets = ['<svg id="s0"/>', '<svg id="s1"/>']
+    const bytes = await buildFacesZip('icosahedron', svgs, serializeProject(settings), sheets)
+    const zip = await JSZip.loadAsync(bytes)
+    expect(Object.keys(zip.files)).toHaveLength(23)
+    expect(sheetFileName('icosahedron', 0)).toBe('icosahedron_sheet-01.svg')
+    expect(await zip.file('icosahedron_sheet-02.svg')!.async('string')).toBe('<svg id="s1"/>')
   })
 })
