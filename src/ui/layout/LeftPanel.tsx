@@ -1,5 +1,5 @@
 import { RotateCcw, Upload } from 'lucide-react'
-import { type ReactNode, useMemo, useRef, useState } from 'react'
+import { useMemo, useRef } from 'react'
 import { toast } from 'sonner'
 
 import { rotationReadout } from '@/core/geo/rotation'
@@ -20,7 +20,6 @@ import {
 } from '@/core/settings'
 
 import { Button } from '@/ui/components/ui/button'
-import { Input } from '@/ui/components/ui/input'
 import { Label } from '@/ui/components/ui/label'
 import { ScrollArea } from '@/ui/components/ui/scroll-area'
 import {
@@ -35,6 +34,8 @@ import {
 import { Separator } from '@/ui/components/ui/separator'
 import { Switch } from '@/ui/components/ui/switch'
 import { LayerTable } from '@/ui/layout/LayerTable'
+import { NumberField, Section } from '@/ui/layout/fields'
+import { SheetSettings } from '@/ui/layout/SheetSettings'
 import { ProjectToolbar } from '@/ui/layout/ProjectToolbar'
 import { Warnings } from '@/ui/layout/Warnings'
 import { useAppStore } from '@/ui/store'
@@ -312,64 +313,6 @@ function ShapePicker() {
 
 const isResolution = (v: string): v is Resolution => (RESOLUTIONS as readonly string[]).includes(v)
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <section className="space-y-3">
-      <h2 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">{title}</h2>
-      {children}
-    </section>
-  )
-}
-
-function NumberField({
-  id,
-  label,
-  unit,
-  value,
-  onCommit,
-  step,
-  min = 0,
-  accept = (v) => v > 0,
-}: {
-  id: string
-  label: string
-  unit: string
-  value: number
-  /** Called with accepted values as the user types; omit for a placeholder field. */
-  onCommit?: (value: number) => void
-  step: number
-  min?: number
-  /** Which values to commit. Default: positive. */
-  accept?: (value: number) => boolean
-}) {
-  // Keep a draft so the field can be cleared or hold partial input while typing.
-  const [draft, setDraft] = useState(String(value))
-  return (
-    <div className="grid grid-cols-[1fr_6rem] items-center gap-2">
-      <Label htmlFor={id}>{label}</Label>
-      <div className="relative">
-        <Input
-          id={id}
-          type="number"
-          value={draft}
-          step={step}
-          min={min}
-          className="pr-9"
-          onChange={(e) => {
-            setDraft(e.target.value)
-            const v = e.target.valueAsNumber
-            if (onCommit && Number.isFinite(v) && accept(v)) onCommit(v)
-          }}
-          onBlur={() => setDraft(String(value))}
-        />
-        <span className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 text-xs text-muted-foreground">
-          {unit}
-        </span>
-      </div>
-    </div>
-  )
-}
-
 export function LeftPanel() {
   const edgeLengthMm = useAppStore((s) => s.edgeLengthMm)
   const polyhedronDef = useAppStore((s) => s.polyhedron.def)
@@ -463,6 +406,10 @@ export function LeftPanel() {
 
           <Section title="Layers">
             <LayerTable />
+          </Section>
+
+          <Section title="Sheets">
+            <SheetSettings />
           </Section>
 
           <Section title="Globe rotation">

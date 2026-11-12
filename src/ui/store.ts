@@ -5,6 +5,7 @@ import { type PresetId, isPresetId, preset } from '@/core/polyhedron/presets'
 import type { PolyhedronDef } from '@/core/polyhedron/types'
 import { IDENTITY, type Quat } from '@/core/quat'
 import type { FingerTip } from '@/core/joints'
+import { currentLayout } from '@/core/nest/key'
 import type { NestLayout, NestSettings } from '@/core/nest/types'
 import {
   DEFAULT_SETTINGS,
@@ -12,6 +13,8 @@ import {
   type ProjectSettings,
   type Resolution,
 } from '@/core/settings'
+import type { NestJob } from '@/ui/nester-client'
+import type { NestProgress } from '@/worker/nester'
 import type { PackedFace } from '@/worker/projector'
 
 export interface FaceOutput {
@@ -23,6 +26,8 @@ export interface FaceOutput {
 export interface Projection {
   readonly shape: string
   readonly faces: readonly FaceOutput[]
+  /** Rendered sheets of the current layout (plan §13); empty without one. */
+  readonly sheets: readonly FaceOutput[]
   readonly prepareMs: number
   readonly projectMs: number
 }
@@ -94,6 +99,10 @@ interface AppState {
   selectedFace: number
   /** Face shown enlarged in the dialog, or null. */
   enlargedFace: number | null
+  /** Sheet shown enlarged in the dialog, or null. */
+  enlargedSheet: number | null
+  /** The nesting job in progress (plan §13.4 step 11), or null. Not saved. */
+  nesting: { readonly job: NestJob; readonly progress: NestProgress | null } | null
   showFaceNumbers: boolean
   /** True while the user is dragging the globe: previews run at 110m. */
   dragging: boolean
@@ -111,6 +120,8 @@ interface AppState {
   setResolution: (r: Resolution) => void
   selectFace: (index: number) => void
   enlargeFace: (index: number | null) => void
+  enlargeSheet: (index: number | null) => void
+  setNesting: (nesting: AppState['nesting']) => void
   setShowFaceNumbers: (on: boolean) => void
   setRotation: (q: Quat) => void
   resetRotation: () => void
@@ -129,7 +140,12 @@ interface AppState {
   setNest: (patch: Partial<NestSettings>) => void
   setNestLayout: (layout: NestLayout | null) => void
   setComputing: () => void
-  setProjection: (p: Omit<Projection, 'faces'> & { svgs: readonly string[] }) => void
+  setProjection: (
+    p: Omit<Projection, 'faces' | 'sheets'> & {
+      svgs: readonly string[]
+      sheetSvgs?: readonly string[] | null
+    },
+  ) => void
   setError: (message: string) => void
 }
 
@@ -138,6 +154,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
   custom: null,
   selectedFace: 0,
   enlargedFace: null,
+  enlargedSheet: null,
+  nesting: null,
   showFaceNumbers: false,
   dragging: false,
   projection: null,
@@ -153,6 +171,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       ...(isCustom ? { custom: fields.polyhedron } : {}),
       selectedFace: 0,
       enlargedFace: null,
+      enlargedSheet: null,
     })
   },
   setPreset: (id) => set({ polyhedron: { id, def: preset(id) }, selectedFace: 0 }),
@@ -171,6 +190,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
   selectFace: (index) => set({ selectedFace: index }),
   enlargeFace: (index) =>
     set(index === null ? { enlargedFace: null } : { enlargedFace: index, selectedFace: index }),
+  enlargeSheet: (index) => set({ enlargedSheet: index }),
+  setNesting: (nesting) => set({ nesting }),
   setShowFaceNumbers: (on) => set({ showFaceNumbers: on }),
   setRotation: (rotation) => set({ rotation }),
   resetRotation: () => set({ rotation: IDENTITY }),
@@ -198,13 +219,16 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setNest: (patch) => set((s) => ({ nest: { ...s.nest, ...patch } })),
   setNestLayout: (nestLayout) => set({ nestLayout }),
   setComputing: () => set({ computing: true }),
-  setProjection: ({ svgs, ...rest }) => {
-    for (const f of get().projection?.faces ?? []) URL.revokeObjectURL(f.url)
-    const faces = svgs.map((svg) => ({
+  setProjection: ({ svgs, sheetSvgs, ...rest }) => {
+    const old = get().projection
+    for (const f of [...(old?.faces ?? []), ...(old?.sheets ?? [])]) URL.revokeObjectURL(f.url)
+    const output = (svg: string) => ({
       svg,
       url: URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' })),
-    }))
-    set({ projection: { ...rest, faces }, computing: false, error: null })
+    })
+    const faces = svgs.map(output)
+    const sheets = (sheetSvgs ?? []).map(output)
+    set({ projection: { ...rest, faces, sheets }, computing: false, error: null })
   },
   setError: (message) => set({ computing: false, error: message }),
 }))
@@ -228,3 +252,10 @@ export const selectSettings = (s: AppState): ProjectSettings => ({
   nest: s.nest,
   nestLayout: s.nestLayout,
 })
+
+/**
+ * The saved sheet layout if it is current for the settings, else null (plan §13.1 Trigger).
+ * Returns the stored object itself, so it is a stable selector result.
+ */
+export const selectCurrentLayout = (s: AppState): NestLayout | null =>
+  s.nestLayout && currentLayout(selectSettings(s))

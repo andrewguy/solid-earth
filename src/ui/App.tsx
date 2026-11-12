@@ -7,6 +7,7 @@ import { CentrePanel } from '@/ui/layout/CentrePanel'
 import { FaceDialog } from '@/ui/layout/FaceDialog'
 import { FacesPanel } from '@/ui/layout/FacesPanel'
 import { LeftPanel } from '@/ui/layout/LeftPanel'
+import { SheetDialog } from '@/ui/layout/SheetDialog'
 import { ProjectionSync } from '@/ui/useProjectionSync'
 
 export default function App({ startupNotes = [] }: { startupNotes?: readonly string[] }) {
@@ -30,6 +31,7 @@ export default function App({ startupNotes = [] }: { startupNotes?: readonly str
         <FacesPanel />
       </div>
       <FaceDialog />
+      <SheetDialog />
       <Toaster position="bottom-left" richColors />
     </TooltipProvider>
   )

@@ -3,7 +3,7 @@ import { useEffect, useRef } from 'react'
 import { jointOptions } from '@/core/settings'
 import { MAX_LIVE_FACES } from '@/ui/constants'
 import { projector } from '@/ui/projector-client'
-import { useAppStore } from '@/ui/store'
+import { selectCurrentLayout, useAppStore } from '@/ui/store'
 
 const DEBOUNCE_MS = 120
 
@@ -33,6 +33,9 @@ export function useProjectionSync(): void {
   const fingerTip = useAppStore((s) => s.fingerTip)
   const fingerClearanceMm = useAppStore((s) => s.fingerClearanceMm)
   const dragging = useAppStore((s) => s.dragging)
+  // Sheets are rendered only for a layout that is current (plan §13.4 step 9).
+  const layout = useAppStore(selectCurrentLayout)
+  const sheetOutline = useAppStore((s) => s.nest.sheetOutline)
   const latest = useRef(0)
   const wasDragging = useRef(false)
 
@@ -63,6 +66,9 @@ export function useProjectionSync(): void {
             kerfMm,
             thicknessMm,
             joint,
+            sheets: layout
+              ? { layout, nest: useAppStore.getState().nest, outline: sheetOutline }
+              : undefined,
           })
           .then((r) => {
             if (id !== latest.current) return
@@ -70,6 +76,7 @@ export function useProjectionSync(): void {
             setProjection({
               shape: r.shape,
               svgs: r.svgs ?? [],
+              sheetSvgs: r.sheetSvgs,
               prepareMs: r.prepareMs,
               projectMs: r.projectMs,
             })
@@ -95,6 +102,8 @@ export function useProjectionSync(): void {
     fingerTip,
     fingerClearanceMm,
     dragging,
+    layout,
+    sheetOutline,
   ])
 
   // Interactive preview while dragging.

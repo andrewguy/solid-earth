@@ -340,7 +340,7 @@ tests/                  # vitest unit + fast-check properties
 | Post-R1: Archimedean presets | Done: all 13 Archimedean solids (incl. chiral snubs), picker grouped by family |
 | Post-R1: Catalan presets | Done: all 13 Catalan solids, as polar duals of the Archimedean presets |
 | Post-R1: Finger joints | Done (§12): global butt/finger choice, fill/flush tips, clearance; `src/core/joints.ts` |
-| Post-R1: Sheet nesting | In progress (§13): steps 1–10 done (`src/core/panel-shape.ts`, `src/core/nest/`, `src/worker/nester*.ts`, `src/ui/nester-client.ts`, `src/core/export/svg.ts`, `src/worker/projector.ts`) |
+| Post-R1: Sheet nesting | In progress (§13): steps 1–11 done (UI not yet checked in a browser; `src/core/panel-shape.ts`, `src/core/nest/`, `src/worker/nester*.ts`, `src/ui/nester-client.ts`, `src/core/export/svg.ts`, `src/worker/projector.ts`) |
 
 ### Changes from the plan
 
@@ -383,6 +383,10 @@ LightBurn colour palette reference exactly.)
 - ≥ 30 fps while dragging; no visible gaps on the truncated icosahedron; visual comparison with
   d3-geo-polygon `geoIcosahedral`.
 - CI and Pages deployment (milestone 9).
+- Sheet nesting UI (§13 step 11) in a real browser: Sheets settings, Faces/Sheets tabs, Nest with
+  progress and Cancel, sheet previews and dialog, the out-of-date badge, and sheets in the ZIP.
+  It couldn't be driven here: headless Chromium in the sandbox has no WebGL, so the 3D view
+  throws and blanks the whole app.
 
 ---
 
@@ -703,3 +707,21 @@ several workers.
   chosen vertex into the window. That moves it at most one unit, which NFP_GROWTH's 2-unit
   rounding allowance covers. The counterexample is kept as a regression test, and a soak at 10×
   the usual property runs passes.
+- **UI (step 11).**
+  - **Left panel:** a "Sheets" section (`SheetSettings.tsx`) with preset, swap W/H, width and
+    height, gap, margin, rotation mode and step, generations, and the outline switch. The switch
+    explains LightBurn's tool-layer setting when on.
+  - **Right panel:** Faces | Sheets tabs (`FacesPanel.tsx`, `SheetsPanel.tsx`). The Sheets tab
+    has Nest / Nest again, then a progress bar with generation and best sheet count and Cancel,
+    an out-of-date badge, previews with per-sheet SVG download, and `SheetDialog`.
+  - **Warnings:** stale layout and panels left off.
+  - **ZIP:** uses `sheetsForZip` and toasts when sheets are left out.
+  - **`runNesting`** (`src/ui/nesting.ts`) saves a result only if the input key still matches
+    when it arrives. `selectCurrentLayout` is a stable store selector, since it returns the
+    stored object or null.
+  - **`NumberField`** moved to `fields.tsx` and now shows outside changes (presets, opening a
+    project) while not focused. Before, it only re-read its value on blur.
+  - **Progress** was added via the shadcn CLI.
+- **No React error boundary (pre-existing, found while testing).** If WebGL is unavailable, the 3D
+  canvas throws and the whole app unmounts to a blank page. An error boundary around the 3D view
+  with a "3D preview unavailable" fallback would keep the rest of the app usable.
