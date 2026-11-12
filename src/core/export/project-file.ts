@@ -5,6 +5,17 @@ import {
   type LayerMode,
   type LayerStyle,
 } from '../layers'
+import {
+  CUSTOM_SHEET,
+  DEFAULT_NEST_SETTINGS,
+  type NestLayout,
+  type NestPlacement,
+  type NestSettings,
+  ROTATION_MODES,
+  ROTATION_STEPS,
+  matchesPreset,
+  sheetPreset,
+} from '../nest/types'
 import { PolyhedronError, preprocess } from '../polyhedron/preprocess'
 import { isPresetId, preset } from '../polyhedron/presets'
 import type { PolyhedronDef } from '../polyhedron/types'
@@ -121,6 +132,84 @@ function parsePolyhedron(
   }
 }
 
+const isInt = (v: unknown): v is number => isNum(v) && Number.isInteger(v)
+
+function parseNest(raw: unknown, notes: string[]): NestSettings {
+  const d = DEFAULT_NEST_SETTINGS
+  if (raw === undefined) return d
+  if (!isObject(raw)) {
+    notes.push('sheet settings were unreadable; using defaults')
+    return d
+  }
+  const num = (key: keyof NestSettings, ok: (n: number) => boolean) => {
+    const fallback = d[key] as number
+    const v = raw[key]
+    if (v === undefined) return fallback
+    if (isNum(v) && ok(v)) return v
+    notes.push(`sheet ${key} was invalid; using ${fallback}`)
+    return fallback
+  }
+  const sheetWidthMm = num('sheetWidthMm', (n) => n >= 10 && n <= 5000)
+  const sheetHeightMm = num('sheetHeightMm', (n) => n >= 10 && n <= 5000)
+  // The size is authoritative; keep the preset id only while it still describes that size.
+  const presetId = raw.sheetPreset === undefined ? d.sheetPreset : raw.sheetPreset
+  const preset = typeof presetId === 'string' ? sheetPreset(presetId) : undefined
+  const rotationMode = (ROTATION_MODES as readonly unknown[]).includes(raw.rotationMode)
+    ? (raw.rotationMode as NestSettings['rotationMode'])
+    : d.rotationMode
+  if (raw.rotationMode !== undefined && rotationMode !== raw.rotationMode) {
+    notes.push(`unknown sheet rotation mode ${String(raw.rotationMode)}; using ${d.rotationMode}`)
+  }
+  return {
+    sheetPreset:
+      preset && matchesPreset(preset, sheetWidthMm, sheetHeightMm) ? preset.id : CUSTOM_SHEET,
+    sheetWidthMm,
+    sheetHeightMm,
+    gapMm: num('gapMm', (n) => n >= 0 && n <= 50),
+    marginMm: num('marginMm', (n) => n >= 0 && n <= 100),
+    rotationMode,
+    rotationStepDeg: num('rotationStepDeg', (n) =>
+      (ROTATION_STEPS as readonly number[]).includes(n),
+    ),
+    generations: num('generations', (n) => isInt(n) && n >= 1 && n <= 100000),
+    population: num('population', (n) => isInt(n) && n >= 2 && n <= 1000),
+    seed: num('seed', (n) => isInt(n) && n >= 0 && n <= 0xffffffff),
+  }
+}
+
+/**
+ * A saved sheet layout, or null if it is missing or doesn't fit the shape. Whether it is stale
+ * is decided later, by its input key (`currentLayout`).
+ */
+function parseLayout(raw: unknown, faceCount: number, notes: string[]): NestLayout | null {
+  if (raw === undefined || raw === null) return null
+  const invalid = () => {
+    notes.push('the saved sheet layout was invalid and has been discarded; nest again')
+    return null
+  }
+  if (!isObject(raw) || typeof raw.inputKey !== 'string') return invalid()
+  const { sheetCount, placements, unplaced } = raw
+  if (!isInt(sheetCount) || sheetCount < 0 || !Array.isArray(placements)) return invalid()
+  if (!Array.isArray(unplaced) || !unplaced.every(isInt)) return invalid()
+  const seen = new Set<number>()
+  const claim = (face: number) => {
+    if (face < 0 || face >= faceCount || seen.has(face)) return false
+    seen.add(face)
+    return true
+  }
+  const out: NestPlacement[] = []
+  for (const p of placements) {
+    if (!isObject(p)) return invalid()
+    const { face, sheet, x, y, angleDeg } = p
+    if (!isInt(face) || !claim(face)) return invalid()
+    if (!isInt(sheet) || sheet < 0 || sheet >= sheetCount) return invalid()
+    if (!isNum(x) || !isNum(y) || !isNum(angleDeg)) return invalid()
+    out.push({ face, sheet, x, y, angleDeg })
+  }
+  if (!unplaced.every(claim) || seen.size !== faceCount) return invalid()
+  return { inputKey: raw.inputKey, sheetCount, placements: out, unplaced: [...unplaced] }
+}
+
 /**
  * Read a project file or autosave (plan §3 Persistence). Tolerant: anything missing or invalid
  * falls back to the default and is reported in `notes`. Throws `ProjectFileError` only when the
@@ -204,6 +293,8 @@ export function parseProject(text: string): ParsedProject {
     fingerWidthMm: num('fingerWidthMm', (n) => n > 0 && n < 10000, d.fingerWidthMm),
     fingerTip: choice('fingerTip', FINGER_TIPS, d.fingerTip),
     fingerClearanceMm: num('fingerClearanceMm', (n) => n > -1 && n < 1, d.fingerClearanceMm),
+    nest: parseNest(raw.nest, notes),
+    nestLayout: parseLayout(raw.nestLayout, def.faces.length, notes),
   }
   return { settings, notes }
 }

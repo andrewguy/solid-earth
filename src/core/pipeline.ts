@@ -3,15 +3,9 @@ import { clipRingToCone } from './clip/polygon'
 import { clipPolylineToCone } from './clip/polyline'
 import type { SphereRings } from './geo/lines'
 import type { FillLayerId, LineSourceId } from './layers'
-import {
-  BUTT,
-  type JointOptions,
-  fingerParams,
-  fingerReach,
-  fingerSafeInterior,
-  fingeredOutline,
-} from './joints'
-import { panelOutline, polygonConePlanes } from './panel'
+import { BUTT, type JointOptions, fingerReach, fingerSafeInterior } from './joints'
+import { polygonConePlanes } from './panel'
+import { panelFingers, panelModelOutline } from './panel-shape'
 import {
   clipPolylines,
   fromPaths64,
@@ -214,11 +208,8 @@ export function buildFaceArtwork(
     b: Math.sin(rotation) * mmPerUnit,
   }
 
-  const fingers =
-    joint.kind === 'finger' && thicknessMm > 0 ? fingerParams(joint, thicknessMm, mmPerUnit) : null
-  const panel = fingers
-    ? fingeredOutline(frames, faceIndex, fingers)
-    : panelOutline(frames, faceIndex, thicknessMm / mmPerUnit)
+  const fingers = panelFingers(joint, thicknessMm, mmPerUnit)
+  const panel = panelModelOutline(frames, faceIndex, thicknessMm, mmPerUnit, fingers)
   // Butt panels are convex and lie within the true face: clip on the sphere to the panel's cone,
   // which is exact because gnomonic projection maps its planes to the panel edges (with no
   // thickness these are the face's own, shared-edge exact planes), and cull with the face's cap.

@@ -15,7 +15,7 @@ import type { Vec2 } from '../vec3'
 import { PRECISION_MM, roundPolyline } from './round'
 
 /** Clipper works in integers: mm × 1000 (plan §4.4 step 4). */
-const SCALE = 1000
+export const SCALE = 1000
 
 export const toPaths64 = (rings: readonly (readonly Vec2[])[]): Paths64 =>
   rings.map((r) => r.map(([x, y]) => ({ x: Math.round(x * SCALE), y: Math.round(y * SCALE) })))

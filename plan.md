@@ -36,7 +36,7 @@ A client-side web app that takes vector world-map data (countries, coastlines, r
 1. Paper/card mode: unfolded net export on a single sheet with fold/score lines and glue tabs.
 2. Assembly aids: edge/face ID labels, assembly guide sheet.
 3. Bevel joints.
-4. Nested sheet export for a given laser bed size.
+4. Nested sheet export for a given laser bed size. **Scoped 2026-11-12; see §13.**
 5. Internal frame/connector generation.
 6. Finger joints. **Scoped 2026-11-11; see §12.**
 7. DXF export.
@@ -340,6 +340,7 @@ tests/                  # vitest unit + fast-check properties
 | Post-R1: Archimedean presets | Done: all 13 Archimedean solids (incl. chiral snubs), picker grouped by family |
 | Post-R1: Catalan presets | Done: all 13 Catalan solids, as polar duals of the Archimedean presets |
 | Post-R1: Finger joints | Done (§12): global butt/finger choice, fill/flush tips, clearance; `src/core/joints.ts` |
+| Post-R1: Sheet nesting | In progress (§13): steps 1–6 done (`src/core/panel-shape.ts`, `src/core/nest/`) |
 
 ### Changes from the plan
 
@@ -463,3 +464,200 @@ per-edge joint overrides.
   point lies inside any other panel, across 8 shapes and two finger widths; outlines are simple;
   layouts match on both panels; congruent Catalan faces give identical panels; and engraving
   stays on the outer surface.
+
+---
+
+## 13. Sheet nesting (scoped 2026-11-12)
+
+Lay every panel's cut outline out on one or more sheets of a size the user chooses, and export
+one SVG per sheet that is ready for the laser. The main goal is **material yield**: as few sheets
+as possible, with the leftover kept as one usable offcut.
+
+### 13.1 Decisions
+
+| Topic | Decision |
+|---|---|
+| Algorithm | **No-fit-polygon (NFP) nesting of each panel's convex hull**, with a genetic optimiser over placement order and rotation (Deepnest-style). Butt-joint panels are already convex. For finger-joint panels the hull only gives up finger-in-slot interlocking on the sheet, which wouldn't happen anyway with equal finger sizes. |
+| Rotation | A user setting: **free** (configurable step, default 15°), **90° steps**, **180° only** or **none**. "None", "90°" and "180°" are measured from **north-up**, so with "none" panels sit exactly as in the face previews (and grain runs consistently relative to the map). Panels are never mirrored: the engraved side must stay up. |
+| Budget | A **fixed number of generations** (configurable), not a time limit, so a given input and seed always produce the same layout. Progress is shown as a bar (generations done / total), without a time estimate. |
+| Objective | Fewest sheets first. Then, within each sheet, **push parts toward one edge** (left), so the offcut is one large strip and the last sheet stays mostly empty. |
+| Sheet size | Width × height in mm, plus **presets** (§13.3). One size for every sheet in a job. |
+| Spacing | **Minimum gap** between panels (default 2 mm) and **sheet margin** (default 5 mm), measured on the final cut path, after finger joints and kerf. Panels never share a cut line. |
+| Oversize panels | Nest what fits. Any panel that fits at no allowed rotation goes on an **unplaced** list with a warning, and is left out of the sheet SVGs. |
+| Labels | None. |
+| Trigger | A **Nest** button. The layout is saved in the project file and autosave. Changing anything that affects outlines or the sheet (shape, edge length, thickness, kerf, joint settings, sheet settings) marks it **stale**. In the restricted rotation modes, changing the globe rotation also marks it stale, because north-up changes. Other artwork-only changes (layers, styles, resolution, and globe rotation in free mode) re-render the sheets without re-nesting. |
+| Output | A **Sheets** tab next to the face grid, with per-sheet preview and SVG download. The ZIP adds `<shape>_sheet-NN.svg` alongside the face SVGs and `project.json` when the layout is current. Sheet SVGs use the same layers and LightBurn colours as face SVGs. |
+| Sheet outline | A sheet-boundary rectangle in its own **non-output** layer and colour (a LightBurn tool layer), for positioning on the bed. |
+
+### 13.2 Out of scope for the first version
+
+Spare copies, nesting a subset of faces, yield and cut-length statistics, mixed sheet sizes,
+common-line cutting, labels, non-convex (true-shape) nesting, and parallel evaluation across
+several workers.
+
+### 13.3 Design notes
+
+- **Reference frame.** Placements are rigid transforms (θ, x, y) from a panel's *reference frame*
+  to the sheet. In free mode the reference is the face's own (u, v) frame, which doesn't depend
+  on the globe rotation, so rotating the globe never invalidates the layout. In the restricted
+  modes the reference is the north-up export frame (`FaceArtwork.rotation` applied), and the
+  input key includes the globe rotation, so rotating the globe marks the layout stale.
+  Rendering composes the placement with the artwork's export rotation either way.
+- **Parts.** Each part is the convex hull of its cut outline (after kerf), offset outward by
+  gap/2 with mitre joins, which keeps it convex. The sheet's usable area shrinks by
+  margin − gap/2. Coordinates are Clipper2 integers (mm × 1000), the same as `src/core/planar`.
+- **NFP.** For convex A and B, NFP(A, B) = A ⊕ (−B) is a convex polygon. It is computed directly
+  by merging the two edge lists sorted by angle, in O(n + m), with no Minkowski library call and
+  no holes. The **inner-fit polygon** of a rectangular sheet is a rectangle, worked out directly.
+- **NFP cache.** NFP(A@α, B@β) = R(α) · NFP(A@0, B@(β − α)), so each pair of distinct shapes only
+  needs one NFP per *relative* angle. Congruent panels (e.g. all 20 icosahedron faces, every
+  Catalan face) are found by matching cyclic edge-length and angle sequences of the hulls, and
+  share a canonical shape plus a rotation offset. Catalan solids nest as one shape, and most
+  Archimedean solids as two or three.
+- **Placement.** Parts are placed one at a time in the given order and rotation. The feasible
+  region for a part on a sheet is IFP − ∪ NFP(placed, part), computed with Clipper2 (the union is
+  non-convex even though each NFP is convex). Candidates are the vertices of that region; the
+  one with the smallest x wins, then the smallest y. A part that fits on no open sheet opens a
+  new one.
+- **Fitness.** First the number of sheets, then the sum over sheets of the largest x used, with
+  the last sheet weighted most. Unplaceable parts are found once, up front, and excluded.
+- **Optimiser.** A genetic algorithm over (order, angle per part). The first individual is
+  greedy, largest area first, using each part's best angle. It uses order crossover, swap and
+  angle mutations, and a seeded PRNG (mulberry32). Defaults (tuned in step 6, §13.6): population
+  10, **20 generations**. The best individual is kept between generations, so more generations
+  never give a worse result.
+- **Sheet presets** (W × H, mm): A4 297 × 210, A3 420 × 297, 12 × 12 in 305 × 305,
+  12 × 24 in 610 × 305, 300 × 200 (K40-class bed), 400 × 400 (common diode bed), 495 × 279
+  (Glowforge), 600 × 400, 900 × 600, 1200 × 600 (half sheet / large CO₂ bed), plus Custom.
+
+### 13.4 Implementation steps
+
+1. **Panel outlines without artwork.** Expose a function that returns each face's cut outline
+   (after kerf) in face-frame mm, plus its north-up angle, without projecting any map data.
+   Factor it out of `buildFaceArtwork` / `src/core/panel.ts` / `src/core/joints.ts` as needed.
+   Test that it matches `FaceArtwork.cutOutline` rotated back by `FaceArtwork.rotation`.
+2. **Settings and types** (`src/core/settings.ts`, `src/core/nest/types.ts`): `NestSettings`
+   (sheet W/H, preset id, gap, margin, rotation mode and step, generations, population, seed)
+   inside `ProjectSettings`. `NestLayout { inputKey, sheetCount, placements: { face, sheet, x,
+   y, angleDeg }[], unplaced: number[] }`. `nestInputKey(settings)` is a stable hash of
+   everything that affects outlines or the sheet, plus the globe rotation in restricted
+   rotation modes. Project-file parsing is tolerant: older files get defaults and no layout. The
+   schema version stays 1 because the change only adds fields.
+3. **Part preparation** (`src/core/nest/parts.ts`): convex hull, gap offset, the allowed angle set
+   per rotation mode, congruence detection to canonical shapes, and the oversize check against
+   the IFP. Tests: each part contains its cut outline and stays convex; congruent faces are
+   detected on the icosahedron, truncated icosahedron and a Catalan solid, and distinct shapes
+   are not merged.
+4. **NFP and IFP** (`src/core/nest/nfp.ts`), with the relative-angle cache. fast-check
+   properties over random convex polygons: B placed strictly outside NFP(A, B) never overlaps A;
+   B placed strictly inside always does; B on the boundary touches A with zero overlap area; the
+   result equals the convex hull of all pairwise vertex sums.
+5. **Placement** (`src/core/nest/place.ts`): a deterministic placement for a given order and
+   angles, and fitness. Tests: no pair of placed parts overlaps (pairwise Clipper intersection
+   area 0), every part lies inside the margin, the gap holds between cut outlines, every face is
+   placed exactly once or listed as unplaced, and the result is deterministic. A known case is
+   checked too: 20 icosahedron triangles on a sheet that fits exactly N rows must use N rows.
+6. **Optimiser** (`src/core/nest/optimise.ts`): the GA with a generation count, seed and progress
+   callback. Tests: never worse than the greedy start; identical results for identical input and
+   seed; on a few small cases it reaches a known optimal sheet count.
+7. **Nester worker** (`src/worker/nester.ts` + `nester.worker.ts`, via comlink). It is separate
+   from the projector, so previews stay responsive while nesting runs. It reports progress
+   (generation, best sheet count) and can be cancelled. A client sits next to
+   `src/ui/projector-client.ts`.
+8. **Sheet SVG** (`src/core/export/svg.ts`): refactor `faceToSvg`'s layer-body builder to take
+   a 2D transform, then add `sheetToSvg(sheet, placedArts, styles)`, which writes all panels into
+   one set of layer groups, plus a sheet-outline layer. Add a `sheet` layer id with a tool-layer
+   colour to `src/core/layers.ts`, after checking which colour LightBurn treats as non-output.
+   Tests: true mm size and viewBox, every cut path inside the sheet, one group per layer, and
+   panel artwork equal to the face SVG's after transformation.
+9. **Projector integration** (`src/worker/projector.ts`): `ProjectRequest` takes an optional
+   current layout, and `ProjectResult` returns `sheetSvgs`. Artwork is cached, so a layout change
+   only re-serialises SVG.
+10. **ZIP** (`src/core/export/zip.ts`): include `<shape>_sheet-NN.svg` when the layout is
+    current. If it is stale, leave the sheets out and warn.
+11. **UI:**
+    - Left panel "Sheet" section, built from shadcn Select, Input and Slider: preset, W/H, gap,
+      margin, rotation mode and step, generations.
+    - `FacesPanel` becomes shadcn Tabs: Faces | Sheets.
+    - Sheets tab: Nest button, a progress bar over the generations with Cancel, and a stale
+      badge. Below them sit sheet previews (click to enlarge), per-sheet download, and the
+      unplaced list.
+    - `Warnings.tsx`: unplaced panels and a stale layout.
+12. **Docs and plan:** README maker notes (sheet presets, gap vs kerf, grain and rotation mode),
+    plus §11 progress and changes.
+
+### 13.5 Resolved in review (2026-11-12)
+
+1. Restricted rotation modes are measured from **north-up**; free mode uses the face frame.
+2. The budget is a **generation count**, with a plain progress bar and no time estimate.
+3. Nesting uses **convex hulls**. Interlocking fingers on the sheet isn't needed.
+4. Bed presets: the standard list in §13.3.
+
+### 13.6 Implementation notes
+
+- **Part preparation** (`src/core/nest/parts.ts`, `convex.ts`). Each distinct shape has one
+  canonical polygon, centred on its centroid so that symmetry rotations about the origin map it
+  onto itself. Each part stores (φ, t), with reference polygon = R(φ) · canonical + t.
+- **Orientations** are `{ alpha, theta }` pairs. `alpha` is the canonical angle the nester uses,
+  deduplicated modulo the shape's rotational symmetry. `theta` is the panel's real rotation, one
+  of the angles the rotation mode allows. Both give the same outline, but only `theta` keeps the
+  engraving the right way round: a triangle in "none" mode must not come back rotated by 120°.
+  In free mode the step grid sits on the canonical frame, so every congruent part shares the
+  same alphas. This works because free mode's reference frame is arbitrary anyway.
+- **Tolerances.** Kerf offsets go through Clipper's 0.001 mm grid, so congruent hulls differ by
+  about that much. Matching uses edge lengths to screen candidate vertex correspondences, then a
+  least-squares rigid fit over all vertices, then a per-vertex check at 0.005 mm. Hull vertices
+  closer than 0.005 mm to the line through their neighbours are dropped. Both tolerances are
+  added to the gap/2 offset, so the gap guarantee stays exact.
+- **Congruence results**, for reference. With thickness, every Catalan solid nests as one shape,
+  the truncated icosahedron as two (pentagon with 5-fold symmetry, hexagon with only 3-fold
+  because its insets alternate), and the snub cube as three. The snub cube's triangles touching
+  a square get a deeper inset on that edge but stay equilateral, just smaller.
+- **NFPs** (`src/core/nest/nfp.ts`). The convex Minkowski sum merges edges in angle order. The
+  cache reduces A's angle modulo A's symmetry period, then takes the relative angle from that
+  reduced angle modulo B's period. Mixing the two (pentagon and hexagon) gives the wrong NFP, and
+  a test covers it. An icosahedron in free mode needs 8 NFPs in total.
+- **Clipper2's `minkowskiSum` is not a valid oracle for filled polygons.** It sweeps the pattern
+  along the path's outline. A small pattern leaves a hole, and thin slivers are under-covered even
+  on the outer boundary. The double-precision wrapper also rounds. Tests use the exact
+  definition instead: the convex hull of the pairwise vertex sums.
+- **Placement** (`src/core/nest/place.ts`). Parts go on the first open sheet with room, at the
+  leftmost and then lowest vertex of IFP − ∪ NFP. That is computed with Clipper2 integers
+  (0.001 mm), with the NFP union grown by MATCH_TOL + 2 units first. That covers the cache's
+  symmetry-reduced angles (accurate only to MATCH_TOL) and integer rounding, so padded parts
+  never overlap. Part padding is gap/2 + HULL_TOL + 2 × MATCH_TOL; the second MATCH_TOL covers
+  θ + φ ≡ α holding only modulo the symmetry period. Fitness = sheet count + (last sheet's used
+  width + 0.1 × the earlier sheets' widths), normalised to [0, 1).
+- **Placement cost** (finger joints, 600 × 400 sheet, warm NFP cache): icosahedron about 8 ms,
+  truncated icosahedron about 18 ms, rhombic triacontahedron about 14 ms, and disdyakis
+  triacontahedron (120 parts) about 113 ms. The disdyakis triacontahedron nests as two shapes,
+  because half its faces are mirror images and panels can't be flipped. At the default budget of
+  20 × 50 = 1,000 placements that is 8 s, 18 s and about 2 minutes, so it needs addressing in
+  step 6 (next note).
+- **Placement speed-ups (step 6)**, all exact; a test checks them against the plain algorithm on
+  random arrangements:
+  - Each NFP is cached already grown (a mitred convex offset), and a single Clipper `difference`
+    replaces union, then inflate, then difference.
+  - The search runs in a window spanning the sheet's full height, starting from the left, that
+    doubles until it finds space. Only obstacles reaching into the window are clipped.
+  - Per sheet and shape/angle, the last leftmost x is remembered and becomes the next window's
+    start (Infinity once the shape doesn't fit). This is valid because the free region only
+    shrinks.
+
+  Per placement this gives about 5 ms for the icosahedron, 11 ms for the truncated icosahedron,
+  12 ms for the rhombic triacontahedron and 120 ms for the disdyakis triacontahedron. The rest is
+  per-call overhead in Clipper (about 0.4 ms per `difference`). Many calls are empty windows for
+  shape/angle pairs not seen before.
+- **Optimiser (step 6)** (`src/core/nest/optimise.ts`). Deepnest-style:
+  - the population is the greedy individual plus its mutations;
+  - the best individual is kept unchanged each generation;
+  - the rest are bred from rank-weighted parents (index ≈ size · (1 − √u)), using single-cut
+    order crossover in which each part keeps its parent's angle;
+  - mutations are adjacent swaps and angle changes at a rate of 0.1;
+  - results are cached by individual, so the kept best and any duplicates are placed only once.
+
+  The **default budget was lowered to population 10 × 20 generations.** Whole runs with finger
+  joints on 600 × 400 take about 0.5 s (icosahedron), 1.4 s (truncated icosahedron), 1.3 s
+  (rhombic triacontahedron) and 12 s (disdyakis triacontahedron, 120 parts), and always improve
+  on the greedy start. If the large Catalans need it later, the next step is a Clipper-free
+  candidate-point search for the leftmost free position, or parallel workers.

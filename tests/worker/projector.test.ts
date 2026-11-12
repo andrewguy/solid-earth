@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { PROJECT_SCHEMA_VERSION, serializeProject } from '@/core/export/project-file'
 import { buildFacesZip, faceFileName, zipFileName } from '@/core/export/zip'
 import { DEFAULT_LAYER_STYLES } from '@/core/layers'
+import { DEFAULT_NEST_SETTINGS } from '@/core/nest/types'
 import { icosahedron, preset } from '@/core/polyhedron/presets'
 import { IDENTITY } from '@/core/quat'
 import type { ProjectSettings } from '@/core/settings'
@@ -177,6 +178,8 @@ describe('ZIP export', () => {
     fingerWidthMm: 10,
     fingerTip: 'fill',
     fingerClearanceMm: 0.1,
+    nest: DEFAULT_NEST_SETTINGS,
+    nestLayout: null,
   }
 
   it('contains every face SVG plus a versioned project.json', async () => {

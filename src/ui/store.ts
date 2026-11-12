@@ -5,6 +5,7 @@ import { type PresetId, isPresetId, preset } from '@/core/polyhedron/presets'
 import type { PolyhedronDef } from '@/core/polyhedron/types'
 import { IDENTITY, type Quat } from '@/core/quat'
 import type { FingerTip } from '@/core/joints'
+import type { NestLayout, NestSettings } from '@/core/nest/types'
 import {
   DEFAULT_SETTINGS,
   type JointKind,
@@ -64,6 +65,8 @@ function fromSettings(s: ProjectSettings) {
     fingerWidthMm: s.fingerWidthMm,
     fingerTip: s.fingerTip,
     fingerClearanceMm: s.fingerClearanceMm,
+    nest: s.nest,
+    nestLayout: s.nestLayout,
   }
 }
 
@@ -84,6 +87,9 @@ interface AppState {
   fingerWidthMm: number
   fingerTip: FingerTip
   fingerClearanceMm: number
+  nest: NestSettings
+  /** Saved with the project; may be stale (see `currentLayout`). */
+  nestLayout: NestLayout | null
   // UI / derived
   selectedFace: number
   /** Face shown enlarged in the dialog, or null. */
@@ -120,6 +126,8 @@ interface AppState {
   setFingerWidthMm: (mm: number) => void
   setFingerTip: (tip: FingerTip) => void
   setFingerClearanceMm: (mm: number) => void
+  setNest: (patch: Partial<NestSettings>) => void
+  setNestLayout: (layout: NestLayout | null) => void
   setComputing: () => void
   setProjection: (p: Omit<Projection, 'faces'> & { svgs: readonly string[] }) => void
   setError: (message: string) => void
@@ -187,6 +195,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setFingerClearanceMm: (mm) => {
     if (Number.isFinite(mm) && mm > -1 && mm < 1) set({ fingerClearanceMm: mm })
   },
+  setNest: (patch) => set((s) => ({ nest: { ...s.nest, ...patch } })),
+  setNestLayout: (nestLayout) => set({ nestLayout }),
   setComputing: () => set({ computing: true }),
   setProjection: ({ svgs, ...rest }) => {
     for (const f of get().projection?.faces ?? []) URL.revokeObjectURL(f.url)
@@ -215,4 +225,6 @@ export const selectSettings = (s: AppState): ProjectSettings => ({
   fingerWidthMm: s.fingerWidthMm,
   fingerTip: s.fingerTip,
   fingerClearanceMm: s.fingerClearanceMm,
+  nest: s.nest,
+  nestLayout: s.nestLayout,
 })

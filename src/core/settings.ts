@@ -1,5 +1,6 @@
 import type { FingerTip, JointOptions } from './joints'
 import { DEFAULT_LAYER_STYLES, type LayerId, type LayerStyle } from './layers'
+import { DEFAULT_NEST_SETTINGS, type NestLayout, type NestSettings } from './nest/types'
 import { preset } from './polyhedron/presets'
 import type { PolyhedronDef } from './polyhedron/types'
 import { IDENTITY, type Quat } from './quat'
@@ -36,6 +37,10 @@ export interface ProjectSettings {
   readonly fingerTip: FingerTip
   /** Per side; negative for a press fit. */
   readonly fingerClearanceMm: number
+  /** Sheet nesting (plan §13). */
+  readonly nest: NestSettings
+  /** The last nesting result, or null; stale when `nestInputKey` no longer matches. */
+  readonly nestLayout: NestLayout | null
 }
 
 export const JOINT_KINDS = ['butt', 'finger'] as const
@@ -74,4 +79,6 @@ export const DEFAULT_SETTINGS: ProjectSettings = {
   fingerWidthMm: 10,
   fingerTip: 'fill',
   fingerClearanceMm: 0.1,
+  nest: DEFAULT_NEST_SETTINGS,
+  nestLayout: null,
 }
