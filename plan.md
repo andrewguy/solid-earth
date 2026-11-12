@@ -340,7 +340,7 @@ tests/                  # vitest unit + fast-check properties
 | Post-R1: Archimedean presets | Done: all 13 Archimedean solids (incl. chiral snubs), picker grouped by family |
 | Post-R1: Catalan presets | Done: all 13 Catalan solids, as polar duals of the Archimedean presets |
 | Post-R1: Finger joints | Done (§12): global butt/finger choice, fill/flush tips, clearance; `src/core/joints.ts` |
-| Post-R1: Sheet nesting | In progress (§13): steps 1–7 done (`src/core/panel-shape.ts`, `src/core/nest/`, `src/worker/nester*.ts`, `src/ui/nester-client.ts`) |
+| Post-R1: Sheet nesting | In progress (§13): steps 1–9 done (`src/core/panel-shape.ts`, `src/core/nest/`, `src/worker/nester*.ts`, `src/ui/nester-client.ts`, `src/core/export/svg.ts`, `src/worker/projector.ts`) |
 
 ### Changes from the plan
 
@@ -375,9 +375,11 @@ tests/                  # vitest unit + fast-check properties
 
 ### Outstanding manual checks (§9)
 
+(Resolved 2026-11-12: LightBurn palette values 00–29 in `src/core/layers.ts` match the official
+LightBurn colour palette reference exactly.)
+
 - SVGs open at true mm scale in Inkscape and LightBurn; LightBurn assigns layers from the default
   colours, including filled paths.
-- LightBurn palette values 04–29 in `src/core/layers.ts` match LightBurn.
 - ≥ 30 fps while dragging; no visible gaps on the truncated icosahedron; visual comparison with
   d3-geo-polygon `geoIcosahedral`.
 - CI and Pages deployment (milestone 9).
@@ -670,3 +672,21 @@ several workers.
   any job still running, and also rejects on the worker's `error` event (script load failure).
   `nestRequest(settings)` sends the same panel inputs as the projector, and the input key that
   `currentLayout` checks.
+- **Sheet SVG (step 8)** (`src/core/export/svg.ts`). `faceToSvg`'s layer markup now comes from a
+  shared `layerPaths(art, styles, strokeMm, toSvg)`; its output was checked byte-identical
+  before and after the refactor. `sheetToSvg` merges every panel on a sheet into one group per
+  layer, in the same engraving order. `placedToSvg` composes the placement with the artwork's
+  export rotation, undoing it first in free mode, then flips y like `faceToSvg`, so panels are
+  never mirrored. A test checks every drawn cut path against the nester's own placed reference
+  outline in all four rotation modes. Deliberately breaking the free-mode correction makes it
+  fail.
+- **Sheet outline** is a fixed constant, not a `LayerId`, so it isn't in the layer table. It is
+  drawn on LightBurn's **T1 tool layer, `#F36926`**, which is never output (official palette
+  reference). **Caveat:** LightBurn only imports onto tool layers with *Allow importing to Tool
+  Layers* enabled. Otherwise it maps T1 to the nearest palette colour, layer 05 (`#FF8000`),
+  which *is* an output layer. The docs need to say this, and a toggle may be wanted (step 11).
+- **Projector integration (step 9).** `ProjectRequest.sheets = { layout, nest, outline }` adds
+  `ProjectResult.sheetSvgs`, or null without a layout or in preview mode. Sheets come from the
+  cached artwork, so a new layout or outline toggle only re-serialises SVG. The UI must send only
+  a current layout. As a safety net, the projector rejects a layout with faces the shape doesn't
+  have.

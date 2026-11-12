@@ -1,4 +1,4 @@
-import { DEFAULT_SVG_OPTIONS, faceToSvg } from '@/core/export/svg'
+import { DEFAULT_SVG_OPTIONS, faceToSvg, sheetSvgs } from '@/core/export/svg'
 import { prepareLines, preparePolygons } from '@/core/geo/lines'
 import {
   type CountriesTopology,
@@ -33,6 +33,7 @@ import { type PolyhedronFrames, buildFrames } from '@/core/polyhedron/faces'
 import type { PolyhedronDef } from '@/core/polyhedron/types'
 import { BUTT, type JointOptions } from '@/core/joints'
 import { type Quat, rotate } from '@/core/quat'
+import type { NestLayout, NestSettings } from '@/core/nest/types'
 import type { Resolution } from '@/core/settings'
 import type { Vec2 } from '@/core/vec3'
 
@@ -65,6 +66,18 @@ export interface ProjectRequest {
    * return packed artwork for the 3D textures. Default true.
    */
   readonly wantSvg?: boolean
+  /**
+   * A sheet layout to render as well (plan §13.4 step 9). Send it only while it is current for
+   * these settings (`currentLayout`); its faces must belong to this shape.
+   */
+  readonly sheets?: SheetRequest
+}
+
+export interface SheetRequest {
+  readonly layout: NestLayout
+  readonly nest: NestSettings
+  /** Draw the sheet outline on LightBurn's T1 tool layer. */
+  readonly outline: boolean
 }
 
 /** Polylines or rings as flat typed arrays (transferable without copying). */
@@ -90,6 +103,8 @@ export interface ProjectResult {
   readonly mmPerUnit: number
   readonly faces: PackedFace[]
   readonly svgs: string[] | null
+  /** One SVG per sheet when `sheets` was requested with SVG output, else null. */
+  readonly sheetSvgs: string[] | null
   /** Time spent loading/preparing data and projecting; 0 when served from cache. */
   readonly prepareMs: number
   readonly projectMs: number
@@ -227,12 +242,26 @@ export class Projector {
       this.lastArt = { key, arts }
     }
     const options = { ...DEFAULT_SVG_OPTIONS, styles: req.layerStyles }
+    let sheets: string[] | null = null
+    if (wantSvg && req.sheets) {
+      const { layout, nest, outline } = req.sheets
+      const bad = layout.placements.find((p) => !arts[p.face])
+      if (bad)
+        throw new Error(`sheet layout has face ${bad.face}, but the shape has ${arts.length}`)
+      // Artwork is cached, so a layout change only re-serialises SVG.
+      sheets = sheetSvgs(arts, layout, nest, {
+        strokeMm: DEFAULT_SVG_OPTIONS.strokeMm,
+        styles: req.layerStyles,
+        outline,
+      })
+    }
     return {
       shapeId: req.polyhedron.id,
       shape: req.polyhedron.def.name,
       mmPerUnit,
       faces: arts.map(packFace),
       svgs: wantSvg ? arts.map((art) => faceToSvg(art, options)) : null,
+      sheetSvgs: sheets,
       prepareMs,
       projectMs,
     }

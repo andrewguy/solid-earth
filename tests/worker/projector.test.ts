@@ -7,7 +7,7 @@ import { DEFAULT_LAYER_STYLES } from '@/core/layers'
 import { DEFAULT_NEST_SETTINGS } from '@/core/nest/types'
 import { icosahedron, preset } from '@/core/polyhedron/presets'
 import { IDENTITY } from '@/core/quat'
-import type { ProjectSettings } from '@/core/settings'
+import { DEFAULT_SETTINGS, type ProjectSettings, jointOptions } from '@/core/settings'
 import countries110m from '@/data/countries-110m.topo.json'
 import countries50m from '@/data/countries-50m.topo.json'
 import land110m from '@/data/land-110m.topo.json'
@@ -16,6 +16,7 @@ import lakes50m from '@/data/lakes-50m.topo.json'
 import land50m from '@/data/land-50m.topo.json'
 import rivers110m from '@/data/rivers-110m.topo.json'
 import rivers50m from '@/data/rivers-50m.topo.json'
+import { nestRequest, runNest } from '@/worker/nester'
 import { type DataLoader, type MapSources, Projector, transferables } from '@/worker/projector'
 
 const data = {
@@ -159,6 +160,74 @@ describe('Projector', () => {
     )
     await expect(projector.project(request)).rejects.toThrow('offline')
     await expect(projector.project(request)).resolves.toBeTruthy()
+  })
+})
+
+describe('Projector sheets', () => {
+  const settings: ProjectSettings = {
+    ...DEFAULT_SETTINGS,
+    edgeLengthMm: 100,
+    rotation: IDENTITY,
+    nest: { ...DEFAULT_NEST_SETTINGS, generations: 2, population: 3 },
+  }
+  const sheetsRequest = {
+    ...request,
+    resolution: '110m' as const,
+    thicknessMm: settings.thicknessMm,
+    joint: jointOptions(settings),
+  }
+  const layout = runNest(nestRequest(settings)).layout
+  const cuts = (svg: string) =>
+    (/<g id="layer-cut"[\s\S]*?<\/g>/.exec(svg)?.[0].match(/M/g) ?? []).length
+
+  it('renders one SVG per sheet with every placed panel, and none without a layout', async () => {
+    const projector = new Projector(load)
+    const r = await projector.project({
+      ...sheetsRequest,
+      sheets: { layout, nest: settings.nest, outline: true },
+    })
+    expect(r.sheetSvgs).toHaveLength(layout.sheetCount)
+    expect(r.sheetSvgs!.reduce((n, svg) => n + cuts(svg), 0)).toBe(layout.placements.length)
+    for (const svg of r.sheetSvgs!) {
+      expect(svg).toContain('width="600mm" height="400mm"')
+      expect(svg).toContain('layer-sheet')
+    }
+    expect(r.svgs).toHaveLength(20) // face SVGs as before
+
+    const plain = await projector.project(sheetsRequest)
+    expect(plain.sheetSvgs).toBeNull()
+    const preview = await projector.project({
+      ...sheetsRequest,
+      wantSvg: false,
+      sheets: { layout, nest: settings.nest, outline: true },
+    })
+    expect(preview.sheetSvgs).toBeNull()
+  })
+
+  it('re-serialises from cached artwork when only the layout or outline changes', async () => {
+    const projector = new Projector(load)
+    await projector.project(sheetsRequest)
+    const other = runNest(nestRequest({ ...settings, nest: { ...settings.nest, seed: 99 } })).layout
+    const r = await projector.project({
+      ...sheetsRequest,
+      sheets: { layout: other, nest: settings.nest, outline: false },
+    })
+    expect(r.projectMs).toBe(0)
+    expect(r.sheetSvgs!.some((svg) => svg.includes('layer-sheet'))).toBe(false)
+  })
+
+  it('rejects a layout whose faces are not on this shape', async () => {
+    const projector = new Projector(load)
+    const bad = {
+      ...layout,
+      placements: [...layout.placements, { face: 25, sheet: 0, x: 0, y: 0, angleDeg: 0 }],
+    }
+    await expect(
+      projector.project({
+        ...sheetsRequest,
+        sheets: { layout: bad, nest: settings.nest, outline: true },
+      }),
+    ).rejects.toThrow(/face 25/)
   })
 })
 
