@@ -3,7 +3,8 @@
 > Status: **Release 1 functionally complete (2026-11-10)**. Milestone 9 (deployment) is prepared:
 > the CI/Pages workflow and base path are in place, pending creation of the `solid-earth` repo and
 > the first push. Milestones 1–8 and 10 are implemented and tested; see §11 for progress, changes from
-> this plan, and the manual checks still outstanding.
+> this plan, and the manual checks still outstanding. Post-R1: sheet nesting (§13) is complete
+> (2026-11-13).
 
 ---
 
@@ -36,7 +37,7 @@ A client-side web app that takes vector world-map data (countries, coastlines, r
 1. Paper/card mode: unfolded net export on a single sheet with fold/score lines and glue tabs.
 2. Assembly aids: edge/face ID labels, assembly guide sheet.
 3. Bevel joints.
-4. Nested sheet export for a given laser bed size. **Scoped 2026-11-12; see §13.**
+4. Nested sheet export for a given laser bed size. **Done 2026-11-13; see §13.**
 5. Internal frame/connector generation.
 6. Finger joints. **Scoped 2026-11-11; see §12.**
 7. DXF export.
@@ -340,7 +341,7 @@ tests/                  # vitest unit + fast-check properties
 | Post-R1: Archimedean presets | Done: all 13 Archimedean solids (incl. chiral snubs), picker grouped by family |
 | Post-R1: Catalan presets | Done: all 13 Catalan solids, as polar duals of the Archimedean presets |
 | Post-R1: Finger joints | Done (§12): global butt/finger choice, fill/flush tips, clearance; `src/core/joints.ts` |
-| Post-R1: Sheet nesting | In progress (§13): steps 1–11 done (UI not yet checked in a browser; `src/core/panel-shape.ts`, `src/core/nest/`, `src/worker/nester*.ts`, `src/ui/nester-client.ts`, `src/core/export/svg.ts`, `src/worker/projector.ts`) |
+| Post-R1: Sheet nesting | Done (§13): sheet settings, Nest with progress and Cancel, sheet previews and SVGs, sheets in the ZIP; `src/core/nest/`, `src/worker/nester*.ts`, `src/ui/layout/Sheet*.tsx` |
 
 ### Changes from the plan
 
@@ -372,6 +373,15 @@ tests/                  # vitest unit + fast-check properties
   `app: "solid-earth"`.
 - **Project files** carry `preset` (rebuilt from code on load) alongside the embedded polyhedron;
   import is tolerant (invalid fields fall back to defaults with notes).
+- **Sheet nesting (§13)** changed from its first plan in these ways (details in §13.6):
+  - parts are convex hulls, not true shapes;
+  - the budget is a generation count, now defaulting to 10 × 20;
+  - nester progress uses plain worker messages, not comlink;
+  - the sheet outline defaults to off;
+  - project files gain `nest` and `nestLayout` without a schema bump.
+- **3D view error boundary (2026-11-13):** if WebGL is unavailable, the centre panel shows
+  "3D preview unavailable" with a retry. Before, the whole app unmounted to a blank page. Found
+  while testing nesting in headless Chromium.
 
 ### Outstanding manual checks (§9)
 
@@ -383,10 +393,10 @@ LightBurn colour palette reference exactly.)
 - ≥ 30 fps while dragging; no visible gaps on the truncated icosahedron; visual comparison with
   d3-geo-polygon `geoIcosahedral`.
 - CI and Pages deployment (milestone 9).
-- Sheet nesting UI (§13 step 11) in a real browser: Sheets settings, Faces/Sheets tabs, Nest with
-  progress and Cancel, sheet previews and dialog, the out-of-date badge, and sheets in the ZIP.
-  It couldn't be driven here: headless Chromium in the sandbox has no WebGL, so the 3D view
-  throws and blanks the whole app.
+- Sheet SVGs in LightBurn: true scale, layer assignment, and the T1 sheet outline landing on a
+  tool layer with *Allow importing to Tool Layers* on (and on layer 05 with it off).
+- Sheet nesting with WebGL on: the UI was driven end to end in headless Chromium, which has no
+  WebGL, so the 3D-view fallback showed. Worth one pass in a normal browser.
 
 ---
 
@@ -590,7 +600,8 @@ several workers.
       unplaced list.
     - `Warnings.tsx`: unplaced panels and a stale layout.
 12. **Docs and plan:** README maker notes (sheet presets, gap vs kerf, grain and rotation mode),
-    plus §11 progress and changes.
+    plus §11 progress and changes. *(Done: a "Sheets" section in `docs/MAKING.md`, README
+    features and layout.)*
 
 ### 13.5 Resolved in review (2026-11-12)
 
@@ -725,3 +736,19 @@ several workers.
 - **No React error boundary (pre-existing, found while testing).** If WebGL is unavailable, the 3D
   canvas throws and the whole app unmounts to a blank page. An error boundary around the 3D view
   with a "3D preview unavailable" fallback would keep the rest of the app usable.
+- **Browser check (step 11/12).** Driven with Playwright and headless Chromium in the
+  scratchpad. The sandbox's Chromium needs `--no-sandbox --disable-dev-shm-usage --disable-gpu`
+  and has no WebGL, and the dev server must run in the same command as the browser, because each
+  sandboxed command has its own network. The run checked:
+  - the 3D fallback showed;
+  - A3 set 420 × 297;
+  - the progress bar showed;
+  - 20 icosahedron panels went onto 2 sheets, with previews and dialog correct;
+  - changing the gap showed the out-of-date badge and the left-panel warning;
+  - restoring it brought the sheets back without nesting again;
+  - the ZIP held `icosahedron_sheet-01/02.svg`.
+
+  The only console errors were the contained WebGL failures.
+- **Telling panels apart on sheets.** There are no labels (§13.1), so parts are matched to faces
+  through the face previews (rotation mode *None* makes them identical). A possible follow-up is
+  showing face numbers over the sheet preview in the app only (not exported).

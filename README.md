@@ -31,7 +31,11 @@ settings, kerf, and assembly.
 - **Finger joints (optional):** interlocking fingers on every edge, sized for your material and
   the angle at each joint, with adjustable finger width and clearance and a choice of fingers
   that fill the joint (sand flush) or sit flush.
-- **Export:** per-face SVG, or a ZIP of all faces plus `project.json`.
+- **Sheet nesting:** lay all panels out on sheets of any size (presets for common stock and
+  laser beds), with a gap and margin measured on the real cut path and a rotation choice that can
+  keep plywood grain consistent. A genetic optimiser minimises the sheet count and keeps the
+  offcut in one strip.
+- **Export:** per-face SVG, per-sheet SVG, or a ZIP of all faces, sheets and `project.json`.
 - **Projects:** autosaved in the browser; open/save project files.
 
 Everything runs in the browser. There is no server and nothing is uploaded.
@@ -45,7 +49,9 @@ Everything runs in the browser. There is no server and nothing is uploaded.
 | Engraved fills (land, lakes, ocean)          | 01              | `#0000FF` |
 | Score (graticule)                            | 03              | `#00E000` |
 
-All colours can be changed per layer from LightBurn's palette.
+All colours can be changed per layer from LightBurn's palette. The optional sheet outline uses
+LightBurn's T1 tool layer (`#F36926`), which is never cut; see the maker guide before turning it
+on.
 
 ## Development
 
@@ -77,9 +83,11 @@ src/core/     pure TypeScript geometry pipeline (no DOM; runs in the worker; ful
   clip/         clipping on the sphere (polylines, polygons) and culling
   project/      gnomonic projection, north-up orientation
   planar/       Clipper2 wrapper: unions, differences, kerf offset, rounding
-  export/       SVG, ZIP, project files
+  export/       SVG (faces and sheets), ZIP, project files
+  nest/         sheet nesting: convex parts, no-fit polygons, placement, genetic optimiser
   pipeline.ts   rotate → clip → project → per-face artwork
-src/worker/   the pipeline behind a web worker (comlink), data loading
+  panel-shape.ts  panel cut outlines without map data (for nesting)
+src/worker/   the projection pipeline and the nester behind web workers, data loading
 src/ui/       React app: zustand store, react-three-fiber preview, panels
 scripts/      build-data.ts
 tests/        Vitest unit tests and fast-check property tests

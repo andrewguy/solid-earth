@@ -132,7 +132,51 @@ Use one or the other, not both.
 Your work is autosaved in the browser. Use _Save project_ to keep a copy or move it to another
 computer.
 
-## 8. Assembly
+## 8. Sheets
+
+The **Sheets** tab lays every panel out on sheets of your material or laser bed, using as few
+sheets as possible.
+
+1. Under **Sheets** in the left panel, pick a size (A4, A3, 12 × 24 in, common laser beds, …)
+   or type your own. The ⇄ button swaps width and height.
+2. Set the **gap between panels** (default 2 mm) and the **sheet margin** (default 5 mm). Both
+   are measured on the actual cut path, after finger joints and kerf, so they are real clearances
+   on the material.
+3. Choose **panel rotation**:
+   - **Free** turns panels to any multiple of the step for the best material use.
+   - **90° steps**, **180° only** and **None** keep panels relative to north-up. Use them to
+     control **grain direction** on plywood: with _None_ every panel sits exactly as in the face
+     previews and the grain runs the same way across the whole map.
+4. Open the **Sheets** tab and press **Nest panels**. A progress bar shows the optimiser working
+   (_Cancel_ keeps the previous layout). Each sheet then has a preview and its own SVG download,
+   and the **ZIP** includes them as `<shape>_sheet-01.svg`, `-02`, ….
+
+The optimiser tries many orders and rotations and keeps the best: fewest sheets first, then the
+widest single offcut on the right of the last sheet. **Optimiser generations** trades time for a
+tighter layout (most shapes take a second or two at the default; the 120-face solids take longer).
+The same settings always give the same layout.
+
+The layout is saved with the project. If you change anything it depends on (shape, size,
+thickness, kerf, joints or sheet settings), it is marked **out of date** and left out of the ZIP
+until you nest again. Changing layers, colours or map resolution just redraws the sheets. Turning
+the globe does too, except with the north-up rotation modes, where it changes which way panels
+face.
+
+A panel too big for the sheet at every allowed rotation is listed in a warning and left off the
+sheets; use a larger sheet, a smaller edge length, or allow more rotations.
+
+**Sheet outline.** _Sheet outline_ adds the sheet boundary in LightBurn's **T1 tool layer**
+colour (`#F36926`), which LightBurn never sends to the laser. It's off by default because
+LightBurn only imports onto tool layers when **Edit → Settings → Allow importing to Tool Layers**
+is turned on. Without that setting, the outline lands on layer 05 (orange), which **is** cut.
+Turn the setting on in LightBurn before using the outline.
+
+**Telling panels apart.** Sheets carry no labels, so before you separate the parts, match each
+one to its face number using the face previews (the enlarged-sheet dialog lists which faces are
+on that sheet). Rotation mode _None_ makes this easiest, because every panel then sits on the
+sheet exactly as its preview shows it.
+
+## 9. Assembly
 
 A laser cuts square edges, and square-cut panels can't meet at their outer faces on a convex
 solid (their inner corners would collide). So each panel edge is **pulled in** slightly, by an
@@ -148,7 +192,8 @@ crisp seams, or fill them with wood filler or tinted epoxy and sand flush.
 Because the panels only touch along a line, the strength comes from glue on the inside corner:
 
 1. **Number the backs.** Before separating parts from the sheet, pencil each panel's number
-   (from the file name) on the back.
+   on the back: from the file name for single-face files, or by matching the face previews for
+   sheets (see _Sheets_ above).
 2. **Plan neighbours.** The enlarged-face dialog lists which face joins each edge, and each
    edge's true and cut length.
 3. **Tape and fold.** Bring neighbouring panels together so their inner (back) edges touch, and
@@ -160,7 +205,7 @@ Because the panels only touch along a line, the strength comes from glue on the 
 5. Close the last few panels carefully; reaching inside gets harder as the globe closes. Leaving
    one panel loose until the end makes it easier.
 
-## 9. Finger joints
+## 10. Finger joints
 
 Set _Joints_ to **Finger joints** under _Panel geometry_ for interlocking fingers on every edge.
 They line panels up as you assemble and give the glue far more area than a butt joint.
@@ -188,12 +233,17 @@ outside even with _Fill joint_.
 
 Thickness matters even more than with butt joints: measure your sheet and enter the real value.
 
-## 10. Troubleshooting
+## 11. Troubleshooting
 
 - **Panels the wrong size in LightBurn:** check that the import didn't apply a DPI scale. The SVGs
   are in mm (`width="…mm"`).
 - **Wrong layers in LightBurn:** layer colours must be exact palette values. Keep the defaults,
   or pick from the app's palette, which only offers LightBurn colours.
+- **The sheet outline gets cut:** LightBurn put it on layer 05 because tool-layer import is off.
+  Turn on _Allow importing to Tool Layers_ in LightBurn's settings, or turn the outline off.
+- **No sheets in the ZIP:** the layout is out of date (the Sheets tab says so). Nest again.
+- **3D preview unavailable:** the browser couldn't start WebGL. Check that hardware acceleration
+  is on, or try another browser. Everything else, including exports, still works.
 - **An imported shape is rejected:** it must be a closed, convex solid. The message names the
   vertex or face at fault.
 - **Something looks off after an update:** _New project_ resets everything to defaults.
