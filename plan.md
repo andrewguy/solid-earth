@@ -340,7 +340,7 @@ tests/                  # vitest unit + fast-check properties
 | Post-R1: Archimedean presets | Done: all 13 Archimedean solids (incl. chiral snubs), picker grouped by family |
 | Post-R1: Catalan presets | Done: all 13 Catalan solids, as polar duals of the Archimedean presets |
 | Post-R1: Finger joints | Done (§12): global butt/finger choice, fill/flush tips, clearance; `src/core/joints.ts` |
-| Post-R1: Sheet nesting | In progress (§13): steps 1–6 done (`src/core/panel-shape.ts`, `src/core/nest/`) |
+| Post-R1: Sheet nesting | In progress (§13): steps 1–7 done (`src/core/panel-shape.ts`, `src/core/nest/`, `src/worker/nester*.ts`, `src/ui/nester-client.ts`) |
 
 ### Changes from the plan
 
@@ -560,7 +560,7 @@ several workers.
 6. **Optimiser** (`src/core/nest/optimise.ts`): the GA with a generation count, seed and progress
    callback. Tests: never worse than the greedy start; identical results for identical input and
    seed; on a few small cases it reaches a known optimal sheet count.
-7. **Nester worker** (`src/worker/nester.ts` + `nester.worker.ts`, via comlink). It is separate
+7. **Nester worker** (`src/worker/nester.ts` + `nester.worker.ts`, plain messages; see §13.6). It is separate
    from the projector, so previews stay responsive while nesting runs. It reports progress
    (generation, best sheet count) and can be cancelled. A client sits next to
    `src/ui/projector-client.ts`.
@@ -661,3 +661,12 @@ several workers.
   (rhombic triacontahedron) and 12 s (disdyakis triacontahedron, 120 parts), and always improve
   on the greedy start. If the large Catalans need it later, the next step is a Clipper-free
   candidate-point search for the leftmost free position, or parallel workers.
+- **Nester worker (step 7).** Each job gets its own worker, and cancelling terminates it. The
+  optimiser loop is synchronous, so a cancel message couldn't be received mid-run. A shared
+  memory flag would need cross-origin isolation (COOP/COEP headers), which GitHub Pages can't
+  send. Progress, result and errors are **plain messages on the worker's one channel**
+  (`serveNest`), not comlink. A comlink callback uses a separate MessagePort, and order across
+  ports isn't guaranteed, so progress arrived after the result in testing. `startNest` cancels
+  any job still running, and also rejects on the worker's `error` event (script load failure).
+  `nestRequest(settings)` sends the same panel inputs as the projector, and the input key that
+  `currentLayout` checks.
