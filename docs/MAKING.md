@@ -54,11 +54,11 @@ If a file is rejected, the message says why (for example, which vertex makes it 
 
 ## 2. Size and material
 
-- **Edge length** is the length of the longest panel edge in mm. The resulting globe diameter
+- **Edge length** (on the _Shape_ tab) is the length of the longest panel edge in mm. The resulting globe diameter
   (circumsphere) is shown underneath.
 - Check that the largest panel fits your laser bed. Hexagons on a truncated icosahedron are
   2 × edge wide.
-- **Thickness** must match your material: each panel edge is pulled in so square-cut panels
+- **Thickness** (on the _Panels_ tab) must match your material: each panel edge is pulled in so square-cut panels
   meet at their inner corners (see assembly below). Measure your sheet with calipers; nominal
   "3 mm" ply is often 2.7–3.2 mm.
 
@@ -134,10 +134,10 @@ computer.
 
 ## 8. Sheets
 
-The **Sheets** tab lays every panel out on sheets of your material or laser bed, using as few
+The **Sheets** tab in the right panel lays every panel out on sheets of your material or laser bed, using as few
 sheets as possible.
 
-1. Under **Sheets** in the left panel, pick a size (A4, A3, 12 × 24 in, common laser beds, …)
+1. On the **Sheets** tab of the left panel, pick a size (A4, A3, 12 × 24 in, common laser beds, …)
    or type your own. The ⇄ button swaps width and height.
 2. Set the **gap between panels** (default 2 mm) and the **sheet margin** (default 5 mm). Both
    are measured on the actual cut path, after finger joints and kerf, so they are real clearances
@@ -147,7 +147,7 @@ sheets as possible.
    - **90° steps**, **180° only** and **None** keep panels relative to north-up. Use them to
      control **grain direction** on plywood: with _None_ every panel sits exactly as in the face
      previews and the grain runs the same way across the whole map.
-4. Open the **Sheets** tab and press **Nest panels**. A progress bar shows the optimiser working
+4. Open the **Sheets** tab in the right panel and press **Nest panels**. A progress bar shows the optimiser working
    (_Cancel_ keeps the previous layout). Each sheet then has a preview and its own SVG download,
    and the **ZIP** includes them as `<shape>_sheet-01.svg`, `-02`, ….
 
@@ -207,7 +207,7 @@ Because the panels only touch along a line, the strength comes from glue on the 
 
 ## 10. Finger joints
 
-Set _Joints_ to **Finger joints** under _Panel geometry_ for interlocking fingers on every edge.
+Set _Joints_ to **Finger joints** on the _Panels_ tab for interlocking fingers on every edge.
 They line panels up as you assemble and give the glue far more area than a butt joint.
 
 - **Finger width** is the same for every finger. Each edge gets an even number of fingers and

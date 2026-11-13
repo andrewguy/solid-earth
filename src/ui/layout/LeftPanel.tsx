@@ -1,5 +1,5 @@
 import { RotateCcw, Upload } from 'lucide-react'
-import { useMemo, useRef } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
 import { rotationReadout } from '@/core/geo/rotation'
@@ -33,11 +33,12 @@ import {
 } from '@/ui/components/ui/select'
 import { Separator } from '@/ui/components/ui/separator'
 import { Switch } from '@/ui/components/ui/switch'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/ui/components/ui/tabs'
 import { LayerTable } from '@/ui/layout/LayerTable'
 import { NumberField, Section } from '@/ui/layout/fields'
 import { SheetSettings } from '@/ui/layout/SheetSettings'
 import { ProjectToolbar } from '@/ui/layout/ProjectToolbar'
-import { Warnings } from '@/ui/layout/Warnings'
+import { SheetWarnings, Warnings } from '@/ui/layout/Warnings'
 import { useAppStore } from '@/ui/store'
 
 // Edge length, data resolution and the coastline/border toggles are live; the rest are placeholders until
@@ -313,19 +314,136 @@ function ShapePicker() {
 
 const isResolution = (v: string): v is Resolution => (RESOLUTIONS as readonly string[]).includes(v)
 
-export function LeftPanel() {
+type LeftTab = 'shape' | 'map' | 'panels' | 'sheets'
+
+const LEFT_TABS: readonly { value: LeftTab; label: string }[] = [
+  { value: 'shape', label: 'Shape' },
+  { value: 'map', label: 'Map' },
+  { value: 'panels', label: 'Panels' },
+  { value: 'sheets', label: 'Sheets' },
+]
+
+const isLeftTab = (v: string): v is LeftTab => LEFT_TABS.some((t) => t.value === v)
+
+/** Shape, size and orientation of the globe. */
+function ShapeTab() {
   const edgeLengthMm = useAppStore((s) => s.edgeLengthMm)
   const polyhedronDef = useAppStore((s) => s.polyhedron.def)
   const setEdgeLengthMm = useAppStore((s) => s.setEdgeLengthMm)
+  return (
+    <>
+      <Section title="Shape">
+        <ShapePicker />
+      </Section>
+
+      <Section title="Size">
+        <NumberField
+          id="edge"
+          label="Edge length"
+          unit="mm"
+          value={edgeLengthMm}
+          onCommit={setEdgeLengthMm}
+          step={1}
+        />
+        <p className="text-xs text-muted-foreground">
+          Longest edge. Circumsphere diameter:{' '}
+          {circumDiameterMm(polyhedronDef, edgeLengthMm).toFixed(1)} mm
+        </p>
+      </Section>
+
+      <Section title="Globe rotation">
+        <RotationReadout />
+      </Section>
+    </>
+  )
+}
+
+/** Map data and what gets drawn. */
+function MapTab() {
   const resolution = useAppStore((s) => s.resolution)
   const setResolution = useAppStore((s) => s.setResolution)
+  return (
+    <>
+      <Section title="Map data">
+        <Select
+          value={resolution}
+          onValueChange={(v) => {
+            if (isResolution(v)) setResolution(v)
+          }}
+        >
+          <SelectTrigger className="w-full" aria-label="Data resolution">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="110m">1:110m (coarse)</SelectItem>
+            <SelectItem value="50m">1:50m (medium)</SelectItem>
+          </SelectContent>
+        </Select>
+      </Section>
+
+      <Section title="Layers">
+        <LayerTable />
+      </Section>
+    </>
+  )
+}
+
+/** Material, kerf and how the panels join. */
+function PanelsTab() {
   const thicknessMm = useAppStore((s) => s.thicknessMm)
   const setThicknessMm = useAppStore((s) => s.setThicknessMm)
   const kerfEnabled = useAppStore((s) => s.kerfEnabled)
   const setKerfEnabled = useAppStore((s) => s.setKerfEnabled)
   const kerfMm = useAppStore((s) => s.kerfMm)
   const setKerfMm = useAppStore((s) => s.setKerfMm)
+  return (
+    <>
+      <Section title="Material">
+        <NumberField
+          id="thickness"
+          label="Thickness"
+          unit="mm"
+          value={thicknessMm}
+          onCommit={setThicknessMm}
+          step={0.1}
+        />
+        <div className="flex items-center justify-between">
+          <Label htmlFor="kerf-on">Kerf compensation</Label>
+          <Switch id="kerf-on" checked={kerfEnabled} onCheckedChange={setKerfEnabled} />
+        </div>
+        {kerfEnabled && (
+          <NumberField
+            id="kerf"
+            label="Kerf"
+            unit="mm"
+            value={kerfMm}
+            onCommit={setKerfMm}
+            step={0.01}
+          />
+        )}
+        <p className="text-xs text-muted-foreground">
+          {kerfEnabled
+            ? `Cut path is offset outward by ${(kerfMm / 2).toFixed(3)} mm. Engraving is never offset.`
+            : 'Off: use LightBurn’s kerf offset instead, or turn this on to bake it into the SVG.'}
+        </p>
+      </Section>
 
+      <Section title="Joints">
+        <JointSettings />
+        <PanelInfo />
+      </Section>
+    </>
+  )
+}
+
+/**
+ * Settings, grouped into tabs in workflow order: pick a shape, style the map, set up the material
+ * and joints, then lay the panels out on sheets. Warnings show whichever tab is open: shape and
+ * output warnings above the settings, and the sheet layout warning (which appears as soon as a
+ * setting changes) below them, so it doesn't shift the controls being edited.
+ */
+export function LeftPanel() {
+  const [tab, setTab] = useState<LeftTab>('shape')
   return (
     <aside className="flex min-h-0 min-w-0 flex-col border-r">
       <header className="flex items-center justify-between gap-2 py-2 pr-2 pl-4">
@@ -333,90 +451,44 @@ export function LeftPanel() {
         <ProjectToolbar />
       </header>
       <Separator />
-      <ScrollArea className="min-h-0 flex-1">
-        <div className="space-y-6 p-4">
-          <Warnings />
-          <Section title="Shape">
-            <ShapePicker />
-          </Section>
-
-          <Section title="Size & material">
-            <NumberField
-              id="edge"
-              label="Edge length"
-              unit="mm"
-              value={edgeLengthMm}
-              onCommit={setEdgeLengthMm}
-              step={1}
-            />
-            <p className="text-xs text-muted-foreground">
-              Longest edge. Circumsphere diameter:{' '}
-              {circumDiameterMm(polyhedronDef, edgeLengthMm).toFixed(1)} mm
-            </p>
-            <NumberField
-              id="thickness"
-              label="Thickness"
-              unit="mm"
-              value={thicknessMm}
-              onCommit={setThicknessMm}
-              step={0.1}
-            />
-            <div className="flex items-center justify-between">
-              <Label htmlFor="kerf-on">Kerf compensation</Label>
-              <Switch id="kerf-on" checked={kerfEnabled} onCheckedChange={setKerfEnabled} />
-            </div>
-            {kerfEnabled && (
-              <NumberField
-                id="kerf"
-                label="Kerf"
-                unit="mm"
-                value={kerfMm}
-                onCommit={setKerfMm}
-                step={0.01}
-              />
-            )}
-            <p className="text-xs text-muted-foreground">
-              {kerfEnabled
-                ? `Cut path is offset outward by ${(kerfMm / 2).toFixed(3)} mm. Engraving is never offset.`
-                : 'Off: use LightBurn’s kerf offset instead, or turn this on to bake it into the SVG.'}
-            </p>
-          </Section>
-
-          <Section title="Map data">
-            <Select
-              value={resolution}
-              onValueChange={(v) => {
-                if (isResolution(v)) setResolution(v)
-              }}
-            >
-              <SelectTrigger className="w-full" aria-label="Data resolution">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="110m">1:110m (coarse)</SelectItem>
-                <SelectItem value="50m">1:50m (medium)</SelectItem>
-              </SelectContent>
-            </Select>
-          </Section>
-
-          <Section title="Panel geometry">
-            <JointSettings />
-            <PanelInfo />
-          </Section>
-
-          <Section title="Layers">
-            <LayerTable />
-          </Section>
-
-          <Section title="Sheets">
-            <SheetSettings />
-          </Section>
-
-          <Section title="Globe rotation">
-            <RotationReadout />
-          </Section>
+      <Tabs
+        value={tab}
+        onValueChange={(v) => {
+          if (isLeftTab(v)) setTab(v)
+        }}
+        className="min-h-0 flex-1 gap-0"
+      >
+        <div className="px-4 py-2">
+          <TabsList className="w-full">
+            {LEFT_TABS.map((t) => (
+              <TabsTrigger key={t.value} value={t.value}>
+                {t.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
         </div>
-      </ScrollArea>
+        <Separator />
+        <ScrollArea className="min-h-0 flex-1">
+          <div className="space-y-6 p-4">
+            <Warnings />
+            <TabsContent value="shape" className="space-y-6">
+              <ShapeTab />
+            </TabsContent>
+            <TabsContent value="map" className="space-y-6">
+              <MapTab />
+            </TabsContent>
+            <TabsContent value="panels" className="space-y-6">
+              <PanelsTab />
+            </TabsContent>
+            <TabsContent value="sheets" className="space-y-6">
+              <Section title="Sheets">
+                <SheetSettings />
+              </Section>
+            </TabsContent>
+            <SheetWarnings />
+          </div>
+        </ScrollArea>
+      </Tabs>
     </aside>
   )
 }
