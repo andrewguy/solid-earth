@@ -256,6 +256,8 @@ describe('ZIP export', () => {
     starHoleMagLimit: 2.5,
     starHoleMinDiameterMm: 1,
     skyGridIntervalDeg: 15,
+    craterMinDiameterKm: 30,
+    moonGridIntervalDeg: 15,
     nest: DEFAULT_NEST_SETTINGS,
     nestLayout: null,
   }

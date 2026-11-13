@@ -1,6 +1,13 @@
 import { DEFAULT_SVG_OPTIONS, faceToSvg, sheetSvgs } from '@/core/export/svg'
 import { prepareLines, preparePolygons } from '@/core/geo/lines'
 import {
+  type MoonData,
+  craterCount,
+  craterRims,
+  craterShadows,
+  mariaOutlines,
+} from '@/core/geo/moon'
+import {
   type SkyData,
   eclipticAndEquator,
   mirrorLines,
@@ -27,6 +34,7 @@ import {
   type LayerId,
   type LayerStyle,
   type LineSourceId,
+  type Subject,
   fillsNeeded,
   subjectStyles,
 } from '@/core/layers'
@@ -61,8 +69,16 @@ export type DataLoader = (resolution: Resolution) => Promise<MapSources>
 /** Loads the bundled sky data (plan §15.3). */
 export type SkyLoader = () => Promise<SkyData>
 
-/** Which prepared dataset: Earth at a resolution, or the sky either way round (plan §15). */
-export type MapKey = Resolution | 'sky' | 'sky-mirrored'
+/** Loads the bundled Moon data (plan §16.3). */
+export type MoonLoader = () => Promise<MoonData>
+
+/**
+ * Which prepared dataset: Earth at a resolution, the sky either way round (plan §15), or the
+ * Moon (plan §16).
+ */
+export type MapKey = Resolution | 'sky' | 'sky-mirrored' | 'moon'
+
+const isSkyKey = (key: MapKey) => key === 'sky' || key === 'sky-mirrored'
 
 /** The sky as requested (plan §15.2). Its presence makes the subject the sky. */
 export interface SkyRequest {
@@ -78,6 +94,14 @@ export interface SkyRequest {
   readonly holeMinDiameterMm: number
 }
 
+/** The Moon as requested (plan §16.2). Its presence makes the subject the Moon. */
+export interface MoonRequest {
+  /** Selenographic grid spacing in degrees. */
+  readonly gridIntervalDeg: number
+  /** Smallest crater drawn, in km. */
+  readonly craterMinDiameterKm: number
+}
+
 /** Live preview star markers: angular radii at magnitude 0 and at the limit. */
 export interface LiveStars {
   readonly magLimit: number
@@ -86,8 +110,15 @@ export interface LiveStars {
 }
 
 /** The dataset a request needs. */
-export const mapKey = (resolution: Resolution, sky?: SkyRequest | null): MapKey =>
-  sky ? (sky.flip ? 'sky-mirrored' : 'sky') : resolution
+export const mapKey = (
+  resolution: Resolution,
+  sky?: SkyRequest | null,
+  moon?: MoonRequest | null,
+): MapKey => (sky ? (sky.flip ? 'sky-mirrored' : 'sky') : moon ? 'moon' : resolution)
+
+/** The subject a request shows: the sky if it has a sky request, else the Moon if it has one. */
+export const requestSubject = (req: Pick<ProjectRequest, 'sky' | 'moon'>): Subject =>
+  req.sky ? 'sky' : req.moon ? 'moon' : 'earth'
 
 export interface ProjectRequest {
   /** `id` identifies the shape for caching; `def` must already be preprocessed. */
@@ -105,6 +136,8 @@ export interface ProjectRequest {
   readonly joint?: JointOptions
   /** Show the night sky instead of the Earth (plan §15); `resolution` is then ignored. */
   readonly sky?: SkyRequest | null
+  /** Show the Moon instead of the Earth (plan §16), unless `sky` is set too. */
+  readonly moon?: MoonRequest | null
   /**
    * false for interactive previews (dragging): skip SVG serialisation and rounding, and only
    * return packed artwork for the 3D textures. Default true.
@@ -153,6 +186,8 @@ export interface ProjectResult {
   readonly sheetSvgs: string[] | null
   /** Sky only: stars shown on the whole globe, and how many of them are cut as holes. */
   readonly starCounts: { readonly shown: number; readonly holes: number } | null
+  /** Moon only: craters drawn on the whole globe. */
+  readonly craterCount: number | null
   /** Time spent loading/preparing data and projecting; 0 when served from cache. */
   readonly prepareMs: number
   readonly projectMs: number
@@ -176,25 +211,32 @@ export interface LineSegments3D {
 export class Projector {
   private readonly prepared = new Map<MapKey, Promise<PreparedMap>>()
   private readonly graticules = new Map<number, PreparedLine[]>()
+  /** Crater rims and shadows for the last minimum diameter asked for (the slider moves it). */
+  private craters: { minKm: number; map: PreparedMap } | null = null
+  private moonData: Promise<MoonData> | null = null
   private frames: { id: string; frames: PolyhedronFrames } | null = null
   private lastArt: { key: string; arts: FaceArtwork[] } | null = null
   private readonly load: DataLoader
   private readonly loadSky: SkyLoader
+  private readonly loadMoon: MoonLoader
 
   constructor(
     load: DataLoader,
     loadSky: SkyLoader = () => Promise.reject(new Error('no sky data')),
+    loadMoon: MoonLoader = () => Promise.reject(new Error('no Moon data')),
   ) {
     this.load = load
     this.loadSky = loadSky
+    this.loadMoon = loadMoon
   }
 
   private preparedMap(key: MapKey): Promise<PreparedMap> {
     let p = this.prepared.get(key)
     if (!p) {
-      p =
-        key === 'sky' || key === 'sky-mirrored'
-          ? this.prepareSky(key === 'sky-mirrored')
+      p = isSkyKey(key)
+        ? this.prepareSky(key === 'sky-mirrored')
+        : key === 'moon'
+          ? this.prepareMoon()
           : this.prepareEarth(key)
       // Don't cache failures: allow a retry.
       p.catch(() => this.prepared.delete(key))
@@ -217,6 +259,41 @@ export class Projector {
       { milkyWay: preparePolygons(sky.milkyWay) },
       prepareStars(sky.stars),
     )
+  }
+
+  /** The raw Moon data, loaded once (crater rims are built from it per minimum diameter). */
+  private moon(): Promise<MoonData> {
+    if (!this.moonData) {
+      this.moonData = this.loadMoon()
+      this.moonData.catch(() => (this.moonData = null))
+    }
+    return this.moonData
+  }
+
+  /** The Moon's maria (plan §16.1); craters are added per request by `mapFor`. */
+  private async prepareMoon(): Promise<PreparedMap> {
+    const moon = await this.moon()
+    return prepareMap(
+      { mariaEdge: prepareLines(mariaOutlines(moon)) },
+      { maria: preparePolygons(moon.maria) },
+    )
+  }
+
+  /** Rims, shadow crescents and their outlines for craters down to `minKm` (plan §16.8). */
+  private async craterMap(minKm: number): Promise<PreparedMap> {
+    if (this.craters?.minKm !== minKm) {
+      const { craters } = await this.moon()
+      const shadows = craterShadows(craters, minKm)
+      const map = prepareMap(
+        {
+          craters: craterRims(craters, minKm),
+          craterShadowEdge: shadows.map(([ring]) => [...ring!, ring![0]!]),
+        },
+        { craterShadows: shadows },
+      )
+      this.craters = { minKm, map }
+    }
+    return this.craters.map
   }
 
   private async prepareEarth(resolution: Resolution): Promise<PreparedMap> {
@@ -245,11 +322,23 @@ export class Projector {
     return g
   }
 
-  /** Prepared data plus the grid: the graticule for the Earth, the RA/Dec grid for the sky. */
-  private async mapFor(key: MapKey, gridDeg: number): Promise<PreparedMap> {
+  /**
+   * Prepared data plus the grid (the graticule for the Earth, the RA/Dec grid for the sky, the
+   * lunar grid for the Moon) and, for the Moon, the crater rims down to `craterMinKm`.
+   */
+  private async mapFor(key: MapKey, gridDeg: number, craterMinKm?: number): Promise<PreparedMap> {
     const base = await this.preparedMap(key)
-    const id = key === 'sky' || key === 'sky-mirrored' ? 'skyGrid' : 'graticule'
-    return { ...base, lines: { ...base.lines, [id]: this.graticule(gridDeg) } }
+    const id = isSkyKey(key) ? 'skyGrid' : key === 'moon' ? 'moonGrid' : 'graticule'
+    const lines = { ...base.lines, [id]: this.graticule(gridDeg) }
+    if (key === 'moon' && craterMinKm !== undefined) {
+      const craters = await this.craterMap(craterMinKm)
+      return {
+        ...base,
+        lines: { ...lines, ...craters.lines },
+        polygons: { ...base.polygons, ...craters.polygons },
+      }
+    }
+    return { ...base, lines }
   }
 
   private framesFor({ id, def }: ProjectRequest['polyhedron']): PolyhedronFrames {
@@ -257,8 +346,13 @@ export class Projector {
     return this.frames.frames
   }
 
-  async lineSegments(key: MapKey, gridDeg: number, stars?: LiveStars): Promise<LineSegments3D> {
-    const map = await this.mapFor(key, gridDeg)
+  async lineSegments(
+    key: MapKey,
+    gridDeg: number,
+    stars?: LiveStars,
+    craterMinKm?: number,
+  ): Promise<LineSegments3D> {
+    const map = await this.mapFor(key, gridDeg, craterMinKm)
     const lines: Partial<Record<LineSourceId, Float32Array>> = {}
     const sources = Object.entries(map.lines) as [
       LineSourceId,
@@ -293,9 +387,11 @@ export class Projector {
     const wantSvg = req.wantSvg ?? true
     const precisionMm = wantSvg ? 0.01 : null
     const mmPerUnit = req.edgeLengthMm / longestEdge(frames)
-    const sky = req.sky ?? null
+    const subject = requestSubject(req)
+    const sky = subject === 'sky' ? (req.sky ?? null) : null
+    const moon = subject === 'moon' ? (req.moon ?? null) : null
     // Only the subject's own layers are computed and exported.
-    const styles = subjectStyles(req.layerStyles, sky ? 'sky' : 'earth')
+    const styles = subjectStyles(req.layerStyles, subject)
     const fills = fillsNeeded(styles)
     const stars: StarOptions | undefined = sky
       ? {
@@ -307,8 +403,9 @@ export class Projector {
             : null,
         }
       : undefined
-    const key0 = mapKey(req.resolution, sky)
-    const gridDeg = sky ? sky.gridIntervalDeg : req.graticuleIntervalDeg
+    const key0 = mapKey(req.resolution, sky, moon)
+    const gridDeg = (sky ?? moon)?.gridIntervalDeg ?? req.graticuleIntervalDeg
+    const craterMinKm = moon?.craterMinDiameterKm
     const kerfMm = req.kerfMm ?? 0
     const thicknessMm = req.thicknessMm ?? 0
     const joint = req.joint ?? BUTT
@@ -324,6 +421,7 @@ export class Projector {
       thicknessMm,
       joint,
       stars ?? null,
+      craterMinKm ?? null,
     ])
     let prepareMs = 0
     let projectMs = 0
@@ -334,10 +432,12 @@ export class Projector {
       const holes = stars.holes ? shown.filter((st) => st.mag <= stars.holes!.magLimit).length : 0
       starCounts = { shown: shown.length, holes }
     }
+    const craters =
+      craterMinKm === undefined ? null : craterCount((await this.moon()).craters, craterMinKm)
     let arts = this.lastArt?.key === key ? this.lastArt.arts : null
     if (!arts) {
       const t0 = performance.now()
-      const map = await this.mapFor(key0, gridDeg)
+      const map = await this.mapFor(key0, gridDeg, craterMinKm)
       const t1 = performance.now()
       arts = buildAllFaces(frames, rotateMap(map, req.rotation), {
         mmPerUnit,
@@ -375,6 +475,7 @@ export class Projector {
       svgs: wantSvg ? arts.map((art) => faceToSvg(art, options)) : null,
       sheetSvgs: sheets,
       starCounts,
+      craterCount: craters,
       prepareMs,
       projectMs,
     }

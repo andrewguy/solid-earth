@@ -2,6 +2,7 @@ import { RotateCcw, Upload } from 'lucide-react'
 import { useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
+import { MOON_RADIUS_KM } from '@/core/geo/moon'
 import { rotationReadout } from '@/core/geo/rotation'
 import { SUBJECTS, type Subject } from '@/core/layers'
 import { type FingerTip, fingerProfile } from '@/core/joints'
@@ -18,6 +19,8 @@ import {
   type JointKind,
   RESOLUTIONS,
   type Resolution,
+  CRATER_KM_MAX,
+  CRATER_KM_MIN,
   STAR_MAG_MAX,
   STAR_MAG_MIN,
   isBevelAllowance,
@@ -265,7 +268,8 @@ function JointSettings() {
 function RotationReadout() {
   const rotation = useAppStore((s) => s.rotation)
   const resetRotation = useAppStore((s) => s.resetRotation)
-  const sky = useAppStore((s) => s.subject === 'sky')
+  const subject = useAppStore((s) => s.subject)
+  const sky = subject === 'sky'
   const skyFlip = useAppStore((s) => s.skyFlip)
   const r = rotationReadout(rotation)
   const deg = (v: number) => `${v.toFixed(1)}°`
@@ -293,8 +297,12 @@ function RotationReadout() {
         ))}
       </dl>
       <p className="text-xs text-muted-foreground">
-        {sky ? 'The point in the sky' : 'The geographic point'} at the top of the solid, and the
-        spin about it. Drag the globe in the 3D view to change.
+        {sky
+          ? 'The point in the sky'
+          : subject === 'moon'
+            ? 'The point on the Moon'
+            : 'The geographic point'}{' '}
+        at the top of the solid, and the spin about it. Drag the globe in the 3D view to change.
       </p>
       <Button variant="outline" size="sm" className="w-full" onClick={resetRotation}>
         <RotateCcw /> Reset rotation
@@ -480,7 +488,44 @@ function StarSettings() {
   )
 }
 
-/** What the panels show (the Earth or the sky), its data, and its layers. */
+/** Crater size, as a slider on a log scale (plan §16.2). */
+const kmFromSlider = (v: number) => {
+  const km = 10 ** v
+  return km < 100 ? Math.round(km) : Math.round(km / 5) * 5
+}
+
+/** Smallest crater drawn, and how many craters that shows (plan §16.2). */
+function CraterSettings() {
+  const minKm = useAppStore((s) => s.craterMinDiameterKm)
+  const setMinKm = useAppStore((s) => s.setCraterMinDiameterKm)
+  const count = useAppStore((s) => s.projection?.craterCount)
+  const def = useAppStore((s) => s.polyhedron.def)
+  const edgeLengthMm = useAppStore((s) => s.edgeLengthMm)
+  // Panels lie inside the circumsphere, so this slightly overstates the size on the panels.
+  const sizeMm = (minKm / (2 * MOON_RADIUS_KM)) * circumDiameterMm(def, edgeLengthMm)
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <Label htmlFor="crater-limit">Smallest crater</Label>
+        <span className="font-mono text-xs">{minKm} km</span>
+      </div>
+      <Slider
+        id="crater-limit"
+        min={Math.log10(CRATER_KM_MIN)}
+        max={Math.log10(CRATER_KM_MAX)}
+        step={0.005}
+        value={[Math.log10(minKm)]}
+        onValueChange={([v]) => v !== undefined && setMinKm(kmFromSlider(v))}
+      />
+      <p className="text-xs text-muted-foreground">
+        {count != null ? `${count.toLocaleString()} named craters` : 'Named craters'} at least{' '}
+        {minKm} km across, drawn at true size: about {sizeMm.toFixed(1)} mm on this globe.
+      </p>
+    </div>
+  )
+}
+
+/** What the panels show (the Earth, the sky or the Moon), its data, and its layers. */
 function MapTab() {
   const resolution = useAppStore((s) => s.resolution)
   const setResolution = useAppStore((s) => s.setResolution)
@@ -503,8 +548,14 @@ function MapTab() {
           <SelectContent>
             <SelectItem value="earth">Earth (world map)</SelectItem>
             <SelectItem value="sky">Night sky (star chart)</SelectItem>
+            <SelectItem value="moon">Moon (maria and craters)</SelectItem>
           </SelectContent>
         </Select>
+        {subject === 'moon' && (
+          <p className="text-xs text-muted-foreground">
+            Seen from outside, the near side looks as it does from Earth, with north at the top.
+          </p>
+        )}
         {subject === 'sky' && (
           <>
             <div className="flex items-center justify-between">
@@ -537,9 +588,13 @@ function MapTab() {
             </SelectContent>
           </Select>
         </Section>
-      ) : (
+      ) : subject === 'sky' ? (
         <Section title="Stars">
           <StarSettings />
+        </Section>
+      ) : (
+        <Section title="Craters">
+          <CraterSettings />
         </Section>
       )}
 

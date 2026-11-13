@@ -1,3 +1,4 @@
+import type { MoonData } from '@/core/geo/moon'
 import type { SkyData } from '@/core/geo/sky'
 import type { Resolution } from '@/core/settings'
 
@@ -34,4 +35,10 @@ export async function loadBundledData(resolution: Resolution): Promise<MapSource
 export async function loadSkyData(): Promise<SkyData> {
   const m = (await import('@/data/sky.json')) as { default: unknown }
   return m.default as SkyData
+}
+
+/** Load the bundled Moon (plan §16.3), as its own chunk fetched only when the Moon is first shown. */
+export async function loadMoonData(): Promise<MoonData> {
+  const m = (await import('@/data/moon.json')) as { default: unknown }
+  return m.default as MoonData
 }

@@ -46,6 +46,7 @@ A client-side web app that takes vector world-map data (countries, coastlines, r
 10. Text labels (needs font-to-path conversion).
 11. Optional alternative per-face projection (e.g. azimuthal equidistant), with a warning that edge continuity breaks.
 12. Star chart (celestial globe), with optional cut-out stars for a lamp. **Scoped 2026-11-13; see §15.**
+13. Moon globe (maria and craters). **Scoped 2026-11-13; see §16.**
 
 ---
 
@@ -1053,3 +1054,250 @@ merge).
 - The default star sizes and the 1 mm minimum hole on 3 mm ply.
 - Whether light through 3 mm material near panel corners (where rays meet the panel at a
   slant) still projects clean dots, or whether holes there need enlarging.
+
+## 16. Moon globe (planned and reviewed 2026-11-13)
+
+A third **subject**: the Moon, with the maria and craters. It works like the star chart (§15):
+the same projection, panels, joints, kerf, nesting and export, with only the data and layers
+changed. Nothing is cut through the panels; for a lamp, engrave on translucent material.
+
+### 16.1 How it works
+
+- **Same projection.** Selenographic longitude and latitude (IAU Moon 2000, east positive)
+  go through the pipeline unchanged, as Earth lon/lat does. Maria are polygons like land, crater
+  rims are polylines like coastlines, and both stay continuous across edges.
+- **No mirror switch.** A Moon globe seen from outside looks the way the Moon looks from Earth
+  (north up, Mare Crisium to the east, on the right). The sky needed a flip because its globe is
+  seen from the "wrong" side; the Moon doesn't.
+- **Craters at true size.** A crater is a small circle on the sphere with angular radius
+  (D / 2) / 1737.4 km, generated as a densified polyline and drawn like any other line. Unlike
+  stars, crater size scales with the globe.
+- **Default view.** The near side faces front with north up: identity rotation, the same
+  convention as Earth (lon 0, lat 0 at the front).
+
+### 16.2 Decisions
+
+| Topic | Decision |
+|---|---|
+| Subject switch | The Map tab picker becomes **Earth / Sky / Moon**. Each subject keeps its own layer settings. Saved in the project file. |
+| Maria | **Maria** fill layer (Fill / Outline / both), LightBurn C01, **on by default as Outline** (a full fill is a long engrave; same reasoning as Land defaulting off). |
+| Craters | **Craters** line layer (rims), C00, on by default. |
+| Crater source | **IAU named craters** from the USGS Gazetteer of Planetary Nomenclature, **including satellite craters** (e.g. "Copernicus A"). |
+| Crater limit | **Minimum diameter slider** on the Map tab, in place of Earth's *Map data* resolution and the sky's magnitude slider. Range 10–300 km on a log scale, **default 30 km**. Shows the number of craters drawn. |
+| Lunar grid | **Lunar grid** line layer (selenographic lon/lat graticule), C03, off by default, own spacing setting (default 15°), reusing `graticuleLines`. |
+| Holes | None. No cut-through layer for the Moon. |
+| Rotation | Shared with the other subjects. The readout shows **Lon / Lat / roll**, the same as Earth. |
+| Shared | Shape, size, thickness, kerf, joints (including the sanding guide), sheets, nesting, export, warnings. |
+
+### 16.3 Data and licensing
+
+Neither source is on npm. `scripts/build-data.ts` downloads them with `fetchCached` (extended to
+binary files and per-source cache folders), converts them, and commits the result as
+`src/data/moon.json`, loaded lazily in the worker like `sky.json`.
+
+- **Maria:** LROC global mare boundaries, Nelson et al. (2014), *LPSC 45*, abstract 2861. PDS
+  LROC RDR `EXTRAS/SHAPEFILE/LROC_GLOBAL_MARE/LROC_GLOBAL_MARE_180.ZIP` (8.3 MB shapefile,
+  65° N to 65° S, which covers every mare; fields `MARE_NAME`, `AREA_KM`). Pin by recording
+  the file's SHA-256 in the script.
+- **Craters:** Gazetteer `MOON_nomenclature_center_pts.zip` (shapefile, regenerated nightly by
+  USGS, so pin by recording the download date and checking the crater count stays within a
+  range). Keep features of type *Crater* with a diameter, satellite craters included. Record
+  the counts (named and satellite) in the implementation notes. If the Gazetteer turns out not to
+  list satellite craters, note it and go on with the named ones.
+- **Licences, checked first (step 1):** Gazetteer data is a USGS work (US government, public
+  domain); credit the IAU WGPSN and USGS Astrogeology. The LROC page states no licence; PDS
+  archives are released without restriction under NASA's data policy, but read
+  `LROC_GLOBAL_MARE_README.TXT` and the PDS volume's documents to confirm before bundling. If it
+  turns out to be restricted, fall back to mare units from the USGS Unified Geologic Map of the
+  Moon (Fortezzo et al. 2020, public domain), which is much larger to process.
+- **Format:** `{ maria: MultiPolygon coordinates (d3 winding, merged, simplified), craters:
+  flat [lon, lat, diameterKm] triples, largest first }`. The original budget of 300 KB proved
+  too tight (§16.7); the result is 429 KB, 148 KB gzipped (the sky is 468 KB, 168 KB gzipped).
+- **New dev dependency:** `shapefile` 0.6.6 (BSD-3-Clause) to read `.shp`/`.dbf`. Unzipping
+  uses `jszip`, already a dependency. Build time only; nothing new ships to the browser.
+- Credits: README data/licences, the maker guide's "About the map", and the About dialog.
+
+### 16.4 Out of scope for the first version
+
+Elevation contours (LOLA), landing sites, labels and names (text-labels backlog item; the crater
+names are kept out of `moon.json` for now but are available in the source), cut-through holes,
+raster albedo or shaded relief, crater floors as fills, a maximum crater size, libration.
+
+### 16.5 Implementation steps
+
+1. **Licences and data** (`scripts/build-data.ts`, `src/data/moon.json`,
+   `src/worker/bundled-data.ts`). Confirm both licences (§16.3). Add the dev dependencies and
+   `buildMoon()`: download, unzip, read the shapefiles, rewind maria to the d3 convention with the
+   existing `rewind`, simplify, and write `moon.json`. Build-time checks that throw: total maria
+   area within a few percent of the published ≈ 16 % of the surface; every ring within lon/lat
+   bounds; the crater count is plausible; Copernicus is about 93 km at 9.6° N, 20.1° W. Use
+   `orientByContainment` and `tileRegion` from the sky build only if a mare polygon turns out to
+   be too large for spherical clipping (Oceanus Procellarum is the candidate; the test in step 3
+   decides). `loadMoonData()` as a lazy chunk.
+2. **Settings and layers** (`src/core/settings.ts`, `src/core/layers.ts`,
+   `src/core/export/project-file.ts`). `Subject` gains `'moon'`; `SUBJECT_LAYERS.moon = ['maria',
+   'craters', 'moonGrid']`. `ProjectSettings` gains `craterMinDiameterKm` (default 30) and
+   `moonGridIntervalDeg` (default 15), with validators. New ids: fill `maria`, lines `craters` and
+   `moonGrid`, line source `mariaEdge`. Persistence is additive (schema stays at 1). Tests:
+   subject layer split, old files open unchanged, invalid values fall back.
+3. **Moon linework** (new `src/core/geo/moon.ts`). `MoonData`, `MOON_RADIUS_KM = 1737.4`,
+   `craterRims(craters, minDiameterKm)` → small circles on the sphere as `Vec3[][]`, segment count
+   scaled to size (24–96), split into arcs short enough for face culling, as with the ecliptic.
+   Tests: every rim point at the right angular distance from the centre; the filter respects the
+   minimum; a rim crossing the antimeridian or near a pole stays whole. Pipeline test (as for the
+   Milky Way): maria fills match `geoContains` point by point on a pentakis dodecahedron.
+4. **Worker and store** (`src/worker/projector.ts`, `src/ui/store.ts`,
+   `src/ui/useProjectionSync.ts`). `MapKey` gains `'moon'` and a `MoonLoader`; prepared rims are
+   cached per minimum diameter. `ProjectResult` reports the crater count. Store fields and
+   setters `setCraterMinDiameterKm` and `setMoonGridIntervalDeg`; rerun the projection when they
+   change. Rims are ordinary lines, so the live GPU preview needs no markers.
+5. **Export and texture.** The new ids join the existing fill and line lists, so `svg.ts` and
+   `texture.ts` should need only the layer order entries. Tests: layer colours and order in a Moon
+   SVG; Earth and Sky SVG output byte-identical to before (hash check, as in §14 and §15).
+6. **UI.** Map tab: a third subject option; in Moon mode the crater slider with its count, and the
+   layer table with Moon rows (the Lunar grid row has the interval popover). About dialog: the
+   Moon option and credits.
+7. **Docs.** Maker guide section "Moon globe" (data, crater size limit, engraving maria on
+   translucent acrylic for a lamp, engrave time for a full maria fill). README features, layers
+   and credits. Implementation notes here (§16.6) after building.
+
+### 16.6 Resolved in review (2026-11-13)
+
+- Crater limit default **30 km**, log-scale slider 10–300 km.
+- **Keep** the Lunar grid layer (off by default).
+- Maria default **Outline**.
+- **Include** satellite craters.
+
+### 16.7 Implementation notes
+
+- **Step 1 done (2026-11-13).** `buildMoon()` in `scripts/build-data.ts` (run with
+  `npm run build:data -- --moon-only`; also part of a full run), `src/data/moon.json`,
+  `MoonData` and `MOON_RADIUS_KM` in `src/core/geo/moon.ts`, `loadMoonData()` in
+  `src/worker/bundled-data.ts` (not called until step 4), tests in `tests/core/moon.test.ts`.
+- **Licences checked.** The LROC mare README states no licence or restriction, only the
+  citation (Nelson et al. 2014), and the volume's `AAREADME.TXT` has no terms; it is a NASA PDS
+  archive, so it is treated as unrestricted, cited in the credits. The Gazetteer is a USGS work
+  (public domain). Both documents are saved in `.cache/moon/` by the build.
+- **Pinning.** `LROC_GLOBAL_MARE_180.ZIP` is pinned by SHA-256. The Gazetteer is regenerated
+  nightly, so it is checked instead: 2,000–10,000 craters and Copernicus in place (96 km in the
+  current data).
+- **Maria.** 644 source features (451,704 points), merged with Clipper in planar lon/lat (no
+  ring crosses the antimeridian; the build checks. One small mare near 180°, 35–39° S, is
+  already split there in the source) so neighbouring maria share no edges and
+  Outline mode draws no lines between them. Then Douglas–Peucker at **0.1°** (≈ 3 km, 0.35 mm on
+  a 400 mm globe), rings under **50 km²** dropped, merged again to remove any self-crossings, and
+  rounded to 0.01°. Result: 532 polygons, 22,130 points, 16.3 % of the surface. Tolerance trials:
+  0.03° → 1.25 MB, 0.05° → 790 KB, 0.08° → 524 KB, 0.1° → 429 KB. Merging saved little:
+  the boundaries are simply detailed (digitised at 1:200,000). The largest exterior ring
+  (Oceanus Procellarum region) is under π sr, so the Milky Way's clipping problem shouldn't
+  arise; step 3's containment test will confirm. No separate edge rings are needed: Outline
+  strokes the polygon rings.
+- **Craters.** The Gazetteer files lettered craters as type `Satellite Feature`, not `Crater`.
+  Kept: `Crater, craters` and `Satellite Feature` with a name ending in capital letters, at least
+  10 km across (the slider's minimum), positions to 0.01°. 5,626 craters (1,413 named, 4,213
+  satellite); **2,301 at 30 km or more** (the default; counted after rounding diameters to
+  0.1 km, as the app sees them).
+- **Step 2 done (2026-11-13).** `Subject` gains `'moon'`; layers `maria` (fill, C01, on, Outline),
+  `craters` (line, C00, on) and `moonGrid` (line, C03, off; label "Lunar grid"), line source
+  `mariaEdge` (what Maria strokes), engraving order after the sky's. Settings
+  `craterMinDiameterKm` (default 30, `isCraterMinDiameter` 10–300 km) and `moonGridIntervalDeg`
+  (default 15, the graticule intervals), parsed additively from project files. Tests in
+  `tests/core/moon-settings.test.ts`.
+  - Brought forward because the types required them: store fields and setters
+    (`setCraterMinDiameterKm`, `setMoonGridIntervalDeg`), the Moon rows in the layer table with
+    the Lunar grid's interval popover and Fill / Outline mode labels, and Maria outlines while
+    dragging in `LiveLines` (nothing feeds these sources until step 4).
+  - Earth and Sky SVG output checked byte-identical to `main` (icosahedron and truncated
+    icosahedron; butt, finger and bevel joints; kerf 0.15 mm; all layers and defaults; sky
+    both ways round).
+- **Step 3 done (2026-11-13).** In `src/core/geo/moon.ts`: `craterRims` (exact small circles,
+  one segment per ~10 km, 24–96 segments, closed), `craterCount`, and `mariaOutlines` (the
+  rings with the antimeridian seam of the split mare removed by `removeSeams`, so Outline mode
+  doesn't engrave it). The pipeline gains the `maria` polygon source and fill, clipped to the
+  panel like the Milky Way. Tests in `tests/core/moon-pipeline.test.ts`.
+  - **No arc splitting** for rims: the largest crater (536 km) is about 9° in radius, so a rim's
+    bounding cap is small enough to cull as it is.
+  - **No tiling** for the maria: the fill matches `geoContains` at every sampled point on a cube
+    (large faces) and a pentakis dodecahedron, each unrotated and rotated, so Oceanus Procellarum
+    clips correctly as one ring. The test filters polygons by lon/lat box first; checking the
+    whole region at each sample took minutes.
+  - Earth and Sky SVG output still byte-identical to `main`.
+- **Step 4 done (2026-11-13).** `Projector` takes a third loader (`MoonLoader`); `MapKey` gains
+  `'moon'`; `ProjectRequest.moon: MoonRequest` (`gridIntervalDeg`, `craterMinDiameterKm`);
+  `requestSubject` picks the sky, then the Moon, then the Earth. The prepared Moon holds the
+  maria fill polygons and `mariaEdge` outlines; crater rims are built per minimum diameter and
+  only the last set is cached. `ProjectResult.craterCount`; `lineSegments` takes the crater
+  limit for the live preview, and `LiveLines` keeps only the 6 most recent segment sets (each
+  crater limit is a new set of several MB). Store `moonRequest()` and `Projection.craterCount`;
+  `useProjectionSync` reruns on the Moon settings. Tests in `tests/worker/moon-projector.test.ts`.
+  - Step 5 turned out to need nothing: SVG export and the preview texture loop over
+    `FILL_LAYERS` and `LINE_LAYERS`, so the Moon layers come through (the projector tests check
+    the SVG layer labels).
+  - **Speed:** 0.15–0.5 s per full projection (icosahedron, truncated icosahedron, disdyakis
+    triacontahedron; craters ≥ 30 or ≥ 10 km; maria outline or fill + outline). SVG output is
+    1.2–2.7 MB per shape, under the 4 MB large-output warning.
+  - `moon.json` builds as its own 438 KB chunk, loaded only for the Moon. Earth and Sky SVG
+    output still byte-identical to `main`.
+- **Step 6 done (2026-11-13), not yet tried in a browser.** Map tab: a third subject option,
+  "Moon (maria and craters)", with a one-line note on orientation; in Moon mode a **Craters**
+  section replaces Map data / Stars, with the smallest-crater slider (log scale, 10–300 km;
+  whole km below 100, steps of 5 above), the crater count from the projector, and the crater
+  size in mm on the current globe (from the circumsphere diameter, so approximate). The layer
+  table note explains why Maria start as outlines. Rotation readout: Lon / Lat / roll as for the
+  Earth, captioned "the point on the Moon". About dialog: the Moon in the Map step, and credits
+  for NASA LRO / LROC (Nelson et al. 2014) and the IAU / USGS Gazetteer.
+
+### 16.8 Crater shadows (added 2026-11-13)
+
+Plain rim circles looked crude, so each crater also gets a shadow, simulated from its centre and
+diameter (the data has no depths).
+
+| Topic | Decision |
+|---|---|
+| Approach | **Shadow crescents** (vector fills). Real imagery as a raster engrave (an LROC mosaic or hillshade reprojected per panel) was considered and left for later: much more realistic, but a new raster path through worker, preview and export, several MB of data, and a long grayscale engrave. |
+| Light | **Fixed from the upper left**: local north-west at every crater, as on shaded-relief maps, so every crater is shaded the same way round across the globe. |
+| Look | **Rim + inner shadow.** The rim line stays; the shadow is the crescent of floor nearest the light, where the rim shades the inner wall. |
+| Layer | **Crater shadows**, fill layer (Fill / Outline / both), LightBurn **07 (`#FF00FF`)** so it can be engraved at its own power, on by default. Follows the crater-size slider. |
+
+- **Geometry** (`craterShadows` in `src/core/geo/moon.ts`): the rim's disc minus the same disc
+  moved away from the light by a fraction of its radius, built in the crater's gnomonic tangent
+  plane (where the rim is an exact circle) and mapped back to the sphere, wound the d3 way. The
+  fraction (`shadowFraction`) is 40 % up to 50 km, falling with log diameter to 10 % at 500 km,
+  so flat-floored basins get a thin crescent rather than a bowl's.
+- **Per-crater variation** (added 2026-11-13, at the user's request, for realism): each crater
+  gets its own `craterVariation`, seeded from its rounded lon, lat and diameter, so it is stable
+  across exports, crater limits and orientations. Depth × 0.7–1.3 (capped at 60 % of the
+  radius); light azimuth ± 12°; and a ragged inner edge, three low harmonics (2, 3, 5 waves)
+  with random phases moving the edge along the light by up to ± 35 % of the shadow's depth,
+  fading to zero at the horns. The plain crescent is exactly `s` deep along the light at every
+  height, so offsets kept within 80 % of the room on either side can't cross the rim or the
+  ring itself; the outer edge stays exactly on the rim. No setting: cost and SVG size are
+  unchanged.
+- **Out-of-round rims** (added 2026-11-13, user request): each rim's radius gets four seeded
+  harmonics: oval (k = 2, ≤ 6 %), and lumpy or polygonal (k = 3, 4, 5: ≤ 3, 1.5, 1 %). They're
+  halved at 10 km and in full from 100 km, since small craters are the roundest. Σ a·(k² − 1) < 1
+  keeps every rim convex; the worst rim in the data is 8.7 % from its nominal radius. Rims and
+  shadows are built from the same points in the crater's (north, west) gnomonic plane, so they
+  line up exactly. The crescent generalises to any convex rim: at each height across the light
+  the shadow spans max(far wall, near wall − s) … near wall.
+- **Central peak shadows** (added 2026-11-13, user request: "only on some large craters"): 55 %
+  of craters of 45–180 km (683 of 1,249 in the data; larger basins have peak rings or flooded
+  floors), 35 % of those as a pair. Each peak is 7–13 % of the crater's radius, within 8 % of
+  the centre; its shadow is an egg from just in front of the crest, stretching 2–3.5 peak radii
+  (× the crater's depth factor) away from the light, kept inside 70 % of the radius. They're
+  extra polygons on the Crater shadows layer. `craterShadowSets` groups shadows by crater for
+  the tests. Cost: about +5 % time and +150 KB SVG at 30 km.
+- The projector builds rims, crescents and the crescents' outlines (`craterShadowEdge`, for
+  Outline mode and the live preview) together per crater limit. The pipeline fills crescents
+  like the maria; overlapping crescents merge in the per-panel union.
+- Tests in `tests/core/crater-shadows.test.ts`: one crescent per crater, inside its rim, of an
+  area within the variation's bounds, north-west give or take 25°, a simple ring for 300
+  varied craters, variation deterministic and spread across its range, rims within their
+  amplitude and not round, crescents inside their own rim, peaks on 45–65 % of 45–180 km
+  craters and none outside that range, peak shadows inside the rim and south-east of the peak, at the poles and across the antimeridian;
+  projector tests for the layer, its colour and switching it off.
+- **Cost:** at the default 30 km a full projection takes 0.4–0.65 s and the SVGs are 1.9–2.4 MB
+  per shape (from 0.15–0.35 s and 1.2–1.6 MB without shadows). At 10 km it is 0.8–1.2 s and
+  3.6–4.4 MB, so the large-output warning (4 MB) can appear. Earth and Sky output unchanged.
+- **To judge on a real engrave:** shadow depth (40 % may be heavy on small craters), and the
+  shadow power relative to maria fills.

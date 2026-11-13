@@ -1,6 +1,6 @@
 import * as Comlink from 'comlink'
 
-import { loadBundledData, loadSkyData } from './bundled-data'
+import { loadBundledData, loadMoonData, loadSkyData } from './bundled-data'
 import {
   type LineSegments3D,
   type LiveStars,
@@ -11,7 +11,7 @@ import {
   transferables,
 } from './projector'
 
-const projector = new Projector(loadBundledData, loadSkyData)
+const projector = new Projector(loadBundledData, loadSkyData, loadMoonData)
 
 /** The API the UI sees. Results' typed arrays are transferred, not copied. */
 export const api = {
@@ -19,8 +19,13 @@ export const api = {
     const result = await projector.project(req)
     return Comlink.transfer(result, transferables(result))
   },
-  async lineSegments(key: MapKey, gridDeg: number, stars?: LiveStars): Promise<LineSegments3D> {
-    const result = await projector.lineSegments(key, gridDeg, stars)
+  async lineSegments(
+    key: MapKey,
+    gridDeg: number,
+    stars?: LiveStars,
+    craterMinKm?: number,
+  ): Promise<LineSegments3D> {
+    const result = await projector.lineSegments(key, gridDeg, stars, craterMinKm)
     return Comlink.transfer(
       result,
       Object.values(result.lines).map((a) => a.buffer as ArrayBuffer),

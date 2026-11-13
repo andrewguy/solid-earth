@@ -25,18 +25,21 @@ import { NumberField } from '@/ui/layout/fields'
 import { useAppStore } from '@/ui/store'
 
 /**
- * Row order follows plan §6.4 for the Earth and §15.2 for the sky; the sanding guide (plan §14)
- * only shows in bevel mode.
+ * Row order follows plan §6.4 for the Earth, §15.2 for the sky and §16.2 for the Moon; the
+ * sanding guide (plan §14) only shows in bevel mode.
  */
 const ROWS: Readonly<Record<Subject, readonly LayerId[]>> = {
   earth: ['cut', 'guide', 'coastlines', 'borders', 'rivers', 'lakes', 'land', 'ocean', 'graticule'],
   sky: ['cut', 'guide', 'starHoles', 'stars', 'constellations', 'milkyWay', 'ecliptic', 'skyGrid'],
+  moon: ['cut', 'guide', 'craters', 'craterShadows', 'maria', 'moonGrid'],
 }
 
 /** Fill-layer modes, named for what each layer strokes. */
 const MODE_LABELS: Partial<Record<LayerId, Readonly<Record<LayerMode, string>>>> = {
   stars: { fill: 'Dots', stroke: 'Rings', both: 'Dots + rings' },
   milkyWay: { fill: 'Fill', stroke: 'Outline', both: 'Fill + outline' },
+  maria: { fill: 'Fill', stroke: 'Outline', both: 'Fill + outline' },
+  craterShadows: { fill: 'Fill', stroke: 'Outline', both: 'Fill + outline' },
 }
 const DEFAULT_MODE_LABELS: Readonly<Record<LayerMode, string>> = {
   fill: 'Fill',
@@ -119,6 +122,8 @@ function LayerSettings({ id }: { id: LayerId }) {
   const setGraticuleDeg = useAppStore((s) => s.setGraticuleIntervalDeg)
   const skyGridDeg = useAppStore((s) => s.skyGridIntervalDeg)
   const setSkyGridDeg = useAppStore((s) => s.setSkyGridIntervalDeg)
+  const moonGridDeg = useAppStore((s) => s.moonGridIntervalDeg)
+  const setMoonGridDeg = useAppStore((s) => s.setMoonGridIntervalDeg)
   const index = lightBurnIndex(style.color)
 
   return (
@@ -179,6 +184,7 @@ function LayerSettings({ id }: { id: LayerId }) {
         )}
         {id === 'graticule' && <GridInterval value={graticuleDeg} onChange={setGraticuleDeg} />}
         {id === 'skyGrid' && <GridInterval value={skyGridDeg} onChange={setSkyGridDeg} hours />}
+        {id === 'moonGrid' && <GridInterval value={moonGridDeg} onChange={setMoonGridDeg} />}
         {id === 'starHoles' && <HoleSettings />}
       </PopoverContent>
     </Popover>
@@ -240,7 +246,9 @@ export function LayerTable() {
       <p className="text-xs text-muted-foreground">
         {subject === 'earth'
           ? 'Fills: shore lines follow coasts and lake edges, never the panel edges.'
-          : 'Stars are sized by brightness. Star holes and the Milky Way are off by default.'}
+          : subject === 'sky'
+            ? 'Stars are sized by brightness. Star holes and the Milky Way are off by default.'
+            : 'Maria start as outlines: a full fill is a long engrave. Outlines never follow the panel edges.'}
       </p>
     </>
   )

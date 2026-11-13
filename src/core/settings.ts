@@ -39,7 +39,7 @@ export interface ProjectSettings {
   readonly fingerClearanceMm: number
   /** Bevel mode: how far the cut line sits outside the engraved sanding guide (plan §14). */
   readonly bevelAllowanceMm: number
-  /** What the panels show: the Earth, or the night sky (plan §15). */
+  /** What the panels show: the Earth, the night sky (plan §15) or the Moon (§16). */
   readonly subject: Subject
   /** Sky: mirror to the sky as seen from Earth (false = a traditional celestial globe). */
   readonly skyFlip: boolean
@@ -54,6 +54,10 @@ export interface ProjectSettings {
   readonly starHoleMinDiameterMm: number
   /** Sky: RA/Dec grid spacing in degrees (15° = 1 h). */
   readonly skyGridIntervalDeg: number
+  /** Moon: smallest crater drawn, in km (10–300). */
+  readonly craterMinDiameterKm: number
+  /** Moon: selenographic grid spacing in degrees. */
+  readonly moonGridIntervalDeg: number
   /** Sheet nesting (plan §13). */
   readonly nest: NestSettings
   /** The last nesting result, or null; stale when `nestInputKey` no longer matches. */
@@ -95,6 +99,11 @@ export const isStarDiameter = (mm: number) => mm > 0 && mm <= 20
 /** Valid hole limits: from brighter than any star to the faintest bundled. */
 export const isStarHoleMagLimit = (m: number) => m >= -2 && m <= STAR_MAG_MAX
 
+/** Crater limits offered (plan §16.2); the bundled data goes down to 10 km. */
+export const CRATER_KM_MIN = 10
+export const CRATER_KM_MAX = 300
+export const isCraterMinDiameter = (km: number) => km >= CRATER_KM_MIN && km <= CRATER_KM_MAX
+
 /** Valid sanding allowances in mm (plan §14.2). */
 export const isBevelAllowance = (mm: number) => mm >= 0 && mm < 5
 
@@ -125,6 +134,8 @@ export const DEFAULT_SETTINGS: ProjectSettings = {
   starHoleMagLimit: 2.5,
   starHoleMinDiameterMm: 1,
   skyGridIntervalDeg: 15,
+  craterMinDiameterKm: 30,
+  moonGridIntervalDeg: 15,
   nest: DEFAULT_NEST_SETTINGS,
   nestLayout: null,
 }

@@ -77,9 +77,9 @@ export function AboutDialog() {
                 edge length. Shapes with more faces distort the map less.
               </li>
               <li>
-                <strong>Map:</strong> choose the Earth or the night sky, then which layers to draw:
-                coastlines, borders, fills and the graticule, or stars, constellations and the Milky
-                Way, each with its own LightBurn colour.
+                <strong>Map:</strong> choose the Earth, the night sky or the Moon, then which layers
+                to draw: coastlines, borders, fills and the graticule; stars, constellations and the
+                Milky Way; or maria and craters. Each layer has its own LightBurn colour.
               </li>
               <li>
                 <strong>Panels:</strong> enter your material thickness, optional kerf compensation,
@@ -134,8 +134,9 @@ export function AboutDialog() {
           </HelpSection>
 
           <p className="text-xs text-muted-foreground">
-            Map data from Natural Earth (public domain). Sky data from d3-celestial (BSD). Code
-            under the MIT licence.
+            Map data from Natural Earth (public domain). Sky data from d3-celestial (BSD). Moon data
+            from NASA LRO / LROC (maria, Nelson et al. 2014) and the IAU / USGS Gazetteer of
+            Planetary Nomenclature (craters). Code under the MIT licence.
           </p>
         </div>
 

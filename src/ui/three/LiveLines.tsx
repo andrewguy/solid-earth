@@ -31,6 +31,10 @@ const SOURCES: readonly LineSourceId[] = [
   'milkyWayEdge',
   'constellations',
   'starRings',
+  'moonGrid',
+  'mariaEdge',
+  'craterShadowEdge',
+  'craters',
 ]
 
 /**
@@ -44,6 +48,10 @@ function liveStyle(
   if (source === 'lakeShores') return styles.lakes.enabled ? styles.lakes : null
   if (source === 'milkyWayEdge') return styles.milkyWay.enabled ? styles.milkyWay : null
   if (source === 'starRings') return styles.stars.enabled ? styles.stars : null
+  if (source === 'mariaEdge') return styles.maria.enabled ? styles.maria : null
+  if (source === 'craterShadowEdge') {
+    return styles.craterShadows.enabled ? styles.craterShadows : null
+  }
   if (styles[source].enabled) return styles[source]
   if (source === 'coastlines') {
     if (styles.land.enabled) return styles.land
@@ -107,24 +115,31 @@ class SharedUniforms {
 }
 
 /**
- * Fetch (once per dataset, grid interval and star sizing) the unit-vector segments from the
- * worker.
+ * Fetch (once per dataset, grid interval, star sizing and crater limit) the unit-vector
+ * segments from the worker. Only the most recent few are kept: each crater limit is a new set.
  */
 const segmentCache = new Map<string, Promise<LineSegments3D>>()
+const SEGMENT_CACHE_SIZE = 6
 function useSegments(
   mapKey: MapKey,
   graticuleDeg: number,
   stars: LiveStars | undefined,
+  craterMinKm: number | undefined,
 ): LineSegments3D | null {
-  const key = JSON.stringify([mapKey, graticuleDeg, stars ?? null])
+  const key = JSON.stringify([mapKey, graticuleDeg, stars ?? null, craterMinKm ?? null])
   const [loaded, setLoaded] = useState<{ key: string; data: LineSegments3D } | null>(null)
   useEffect(() => {
     let cancelled = false
     let p = segmentCache.get(key)
     if (!p) {
-      p = projector().lineSegments(mapKey, graticuleDeg, stars)
+      p = projector().lineSegments(mapKey, graticuleDeg, stars, craterMinKm)
       p.catch(() => segmentCache.delete(key))
       segmentCache.set(key, p)
+      // Maps iterate in insertion order: drop the oldest.
+      for (const old of segmentCache.keys()) {
+        if (segmentCache.size <= SEGMENT_CACHE_SIZE) break
+        segmentCache.delete(old)
+      }
     }
     p.then((data) => !cancelled && setLoaded({ key, data })).catch(() => {})
     return () => {
@@ -152,8 +167,12 @@ export function LiveLines({
   const invalidate = useThree((s) => s.invalidate)
   const resolution = useAppStore((s) => s.resolution)
   const sky = useAppStore((s) => s.subject === 'sky')
+  const moon = useAppStore((s) => s.subject === 'moon')
   const skyFlip = useAppStore((s) => s.skyFlip)
-  const graticuleDeg = useAppStore((s) => (sky ? s.skyGridIntervalDeg : s.graticuleIntervalDeg))
+  const graticuleDeg = useAppStore((s) =>
+    sky ? s.skyGridIntervalDeg : moon ? s.moonGridIntervalDeg : s.graticuleIntervalDeg,
+  )
+  const craterMinKm = useAppStore((s) => (moon ? s.craterMinDiameterKm : undefined))
   const edgeLengthMm = useAppStore((s) => s.edgeLengthMm)
   const starMagLimit = useAppStore((s) => s.starMagLimit)
   const starMinMm = useAppStore((s) => s.starMinDiameterMm)
@@ -171,9 +190,10 @@ export function LiveLines({
     }
   }, [sky, edgeLengthMm, frames, starMagLimit, starMinMm, starMaxMm])
   const segments = useSegments(
-    sky ? (skyFlip ? 'sky-mirrored' : 'sky') : resolution,
+    sky ? (skyFlip ? 'sky-mirrored' : 'sky') : moon ? 'moon' : resolution,
     graticuleDeg,
     stars,
+    craterMinKm,
   )
 
   const [shared] = useState(() => new SharedUniforms())

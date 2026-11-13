@@ -47,7 +47,7 @@ export interface PreparedPolygon {
 }
 
 /** Source polygons; ocean is derived per face (plan §4.2). */
-export type PolygonSourceId = 'land' | 'lakes' | 'milkyWay'
+export type PolygonSourceId = 'land' | 'lakes' | 'milkyWay' | 'maria' | 'craterShadows'
 
 /** Map data prepared once per dataset (plan §4.2). */
 export interface PreparedMap {
@@ -351,6 +351,11 @@ export function buildFaceArtwork(
   if (want.milkyWay) {
     const milkyWay = projectPolygons(t, cap, planes, map.polygons.milkyWay ?? [])
     fills.milkyWay = fromPaths64(intersection(milkyWay, engraveRegion), precisionMm)
+  }
+  for (const id of ['maria', 'craterShadows'] as const) {
+    if (!want[id]) continue
+    const projected = projectPolygons(t, cap, planes, map.polygons[id] ?? [])
+    fills[id] = fromPaths64(intersection(projected, engraveRegion), precisionMm)
   }
   if (want.stars && dots.length > 0) {
     fills.stars = fromPaths64(

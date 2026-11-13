@@ -3,7 +3,7 @@ import { useEffect, useRef } from 'react'
 import { jointOptions } from '@/core/settings'
 import { MAX_LIVE_FACES } from '@/ui/constants'
 import { projector } from '@/ui/projector-client'
-import { selectCurrentLayout, skyRequest, useAppStore } from '@/ui/store'
+import { moonRequest, selectCurrentLayout, skyRequest, useAppStore } from '@/ui/store'
 
 const DEBOUNCE_MS = 120
 
@@ -41,6 +41,8 @@ export function useProjectionSync(): void {
   const starMaxDiameterMm = useAppStore((s) => s.starMaxDiameterMm)
   const starHoleMagLimit = useAppStore((s) => s.starHoleMagLimit)
   const starHoleMinDiameterMm = useAppStore((s) => s.starHoleMinDiameterMm)
+  const moonGridIntervalDeg = useAppStore((s) => s.moonGridIntervalDeg)
+  const craterMinDiameterKm = useAppStore((s) => s.craterMinDiameterKm)
   const dragging = useAppStore((s) => s.dragging)
   // Sheets are rendered only for a layout that is current (plan §13.4 step 9).
   const layout = useAppStore(selectCurrentLayout)
@@ -76,6 +78,7 @@ export function useProjectionSync(): void {
       starHoleMagLimit,
       starHoleMinDiameterMm,
     })
+    const moon = moonRequest({ subject, moonGridIntervalDeg, craterMinDiameterKm })
     const { setComputing, setProjection, setArtwork, setError } = useAppStore.getState()
     setComputing()
     const timer = setTimeout(
@@ -92,6 +95,7 @@ export function useProjectionSync(): void {
             thicknessMm,
             joint,
             sky,
+            moon,
             sheets: layout
               ? { layout, nest: useAppStore.getState().nest, outline: sheetOutline }
               : undefined,
@@ -104,6 +108,7 @@ export function useProjectionSync(): void {
               svgs: r.svgs ?? [],
               sheetSvgs: r.sheetSvgs,
               starCounts: r.starCounts,
+              craterCount: r.craterCount,
               prepareMs: r.prepareMs,
               projectMs: r.projectMs,
             })
@@ -137,6 +142,8 @@ export function useProjectionSync(): void {
     starMaxDiameterMm,
     starHoleMagLimit,
     starHoleMinDiameterMm,
+    moonGridIntervalDeg,
+    craterMinDiameterKm,
     dragging,
     layout,
     sheetOutline,
@@ -165,6 +172,7 @@ export function useProjectionSync(): void {
           thicknessMm: s.thicknessMm,
           joint: jointOptions(s),
           sky: skyRequest(s),
+          moon: moonRequest(s),
           wantSvg: false,
         })
         .then((r) => {

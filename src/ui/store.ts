@@ -16,9 +16,10 @@ import {
   isStarDiameter,
   isStarHoleMagLimit,
   isStarMagLimit,
+  isCraterMinDiameter,
 } from '@/core/settings'
 import type { NestJob } from '@/ui/nester-client'
-import type { SkyRequest } from '@/worker/projector'
+import type { MoonRequest, SkyRequest } from '@/worker/projector'
 import type { NestProgress } from '@/worker/nester'
 import type { PackedFace } from '@/worker/projector'
 
@@ -35,6 +36,8 @@ export interface Projection {
   readonly sheets: readonly FaceOutput[]
   /** Sky only: stars shown, and how many are cut as holes. */
   readonly starCounts?: { readonly shown: number; readonly holes: number } | null
+  /** Moon only: craters drawn on the whole globe. */
+  readonly craterCount?: number | null
   readonly prepareMs: number
   readonly projectMs: number
 }
@@ -86,6 +89,8 @@ function fromSettings(s: ProjectSettings) {
     starHoleMagLimit: s.starHoleMagLimit,
     starHoleMinDiameterMm: s.starHoleMinDiameterMm,
     skyGridIntervalDeg: s.skyGridIntervalDeg,
+    craterMinDiameterKm: s.craterMinDiameterKm,
+    moonGridIntervalDeg: s.moonGridIntervalDeg,
     nest: s.nest,
     nestLayout: s.nestLayout,
   }
@@ -117,6 +122,8 @@ interface AppState {
   starHoleMagLimit: number
   starHoleMinDiameterMm: number
   skyGridIntervalDeg: number
+  craterMinDiameterKm: number
+  moonGridIntervalDeg: number
   nest: NestSettings
   /** Saved with the project; may be stale (see `currentLayout`). */
   nestLayout: NestLayout | null
@@ -169,6 +176,8 @@ interface AppState {
   setStarDiametersMm: (patch: { min?: number; max?: number; holeMin?: number }) => void
   setStarHoleMagLimit: (mag: number) => void
   setSkyGridIntervalDeg: (deg: number) => void
+  setCraterMinDiameterKm: (km: number) => void
+  setMoonGridIntervalDeg: (deg: number) => void
   setNest: (patch: Partial<NestSettings>) => void
   setNestLayout: (layout: NestLayout | null) => void
   setComputing: () => void
@@ -269,6 +278,10 @@ export const useAppStore = create<AppState>()((set, get) => ({
     if (Number.isFinite(mag) && isStarHoleMagLimit(mag)) set({ starHoleMagLimit: mag })
   },
   setSkyGridIntervalDeg: (skyGridIntervalDeg) => set({ skyGridIntervalDeg }),
+  setCraterMinDiameterKm: (km) => {
+    if (Number.isFinite(km) && isCraterMinDiameter(km)) set({ craterMinDiameterKm: km })
+  },
+  setMoonGridIntervalDeg: (moonGridIntervalDeg) => set({ moonGridIntervalDeg }),
   setNest: (patch) => set((s) => ({ nest: { ...s.nest, ...patch } })),
   setNestLayout: (nestLayout) => set({ nestLayout }),
   setComputing: () => set({ computing: true }),
@@ -311,6 +324,8 @@ export const selectSettings = (s: AppState): ProjectSettings => ({
   starHoleMagLimit: s.starHoleMagLimit,
   starHoleMinDiameterMm: s.starHoleMinDiameterMm,
   skyGridIntervalDeg: s.skyGridIntervalDeg,
+  craterMinDiameterKm: s.craterMinDiameterKm,
+  moonGridIntervalDeg: s.moonGridIntervalDeg,
   nest: s.nest,
   nestLayout: s.nestLayout,
 })
@@ -346,4 +361,12 @@ export function skyRequest(s: SkyFields): SkyRequest | null {
     holeMagLimit: s.starHoleMagLimit,
     holeMinDiameterMm: s.starHoleMinDiameterMm,
   }
+}
+
+/** The projector's Moon request for these settings, or null when the subject isn't the Moon. */
+export function moonRequest(
+  s: Pick<ProjectSettings, 'subject' | 'moonGridIntervalDeg' | 'craterMinDiameterKm'>,
+): MoonRequest | null {
+  if (s.subject !== 'moon') return null
+  return { gridIntervalDeg: s.moonGridIntervalDeg, craterMinDiameterKm: s.craterMinDiameterKm }
 }

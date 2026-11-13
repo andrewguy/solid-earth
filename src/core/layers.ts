@@ -45,14 +45,24 @@ export function lightBurnIndex(color: string): string | null {
   return i < 0 ? null : String(i).padStart(2, '0')
 }
 
-/** Layers drawn as strokes: Earth linework, and the sky's lines (plan §15). */
+/** Layers drawn as strokes: Earth linework, the sky's lines (plan §15) and the Moon's (§16). */
 export type LineLayerId =
-  'coastlines' | 'borders' | 'rivers' | 'graticule' | 'skyGrid' | 'ecliptic' | 'constellations'
+  | 'coastlines'
+  | 'borders'
+  | 'rivers'
+  | 'graticule'
+  | 'skyGrid'
+  | 'ecliptic'
+  | 'constellations'
+  | 'moonGrid'
+  | 'craters'
 /**
  * Layers that can be filled and optionally stroked: Earth's land, lakes and ocean (stroked along
- * their shorelines), the Milky Way (stroked along its outline) and stars (dots, or rings).
+ * their shorelines), the Milky Way and the Moon's maria (stroked along their outlines) and stars
+ * (dots, or rings).
  */
-export type FillLayerId = 'land' | 'lakes' | 'ocean' | 'milkyWay' | 'stars'
+export type FillLayerId =
+  'land' | 'lakes' | 'ocean' | 'milkyWay' | 'stars' | 'maria' | 'craterShadows'
 /**
  * `guide` is the sanding guide, output only for sanded bevel joints (plan §14). `starHoles` are
  * stars cut right through the panel (plan §15).
@@ -64,7 +74,8 @@ export type LayerId = 'cut' | 'guide' | 'starHoles' | LineLayerId | FillLayerId
  * outlines (that would engrave along every cut, plan §5); "stroke" mode draws their shoreline
  * arcs instead.
  */
-export type LineSourceId = LineLayerId | 'lakeShores' | 'milkyWayEdge' | 'starRings'
+export type LineSourceId =
+  LineLayerId | 'lakeShores' | 'milkyWayEdge' | 'starRings' | 'mariaEdge' | 'craterShadowEdge'
 
 /** Engraving order within each kind: lower layers first. */
 export const LINE_LAYERS: readonly LineLayerId[] = [
@@ -75,8 +86,18 @@ export const LINE_LAYERS: readonly LineLayerId[] = [
   'skyGrid',
   'ecliptic',
   'constellations',
+  'moonGrid',
+  'craters',
 ]
-export const FILL_LAYERS: readonly FillLayerId[] = ['ocean', 'land', 'lakes', 'milkyWay', 'stars']
+export const FILL_LAYERS: readonly FillLayerId[] = [
+  'ocean',
+  'land',
+  'lakes',
+  'milkyWay',
+  'stars',
+  'maria',
+  'craterShadows',
+]
 
 /** Outline linework a fill layer strokes in "stroke"/"both" mode. */
 export const FILL_SHORES: Readonly<Record<FillLayerId, LineSourceId>> = {
@@ -85,16 +106,19 @@ export const FILL_SHORES: Readonly<Record<FillLayerId, LineSourceId>> = {
   lakes: 'lakeShores',
   milkyWay: 'milkyWayEdge',
   stars: 'starRings',
+  maria: 'mariaEdge',
+  craterShadows: 'craterShadowEdge',
 }
 
-/** What the panels show (plan §15). */
-export type Subject = 'earth' | 'sky'
-export const SUBJECTS: readonly Subject[] = ['earth', 'sky']
+/** What the panels show (plan §15, §16). */
+export type Subject = 'earth' | 'sky' | 'moon'
+export const SUBJECTS: readonly Subject[] = ['earth', 'sky', 'moon']
 
 /** Layers that belong to one subject; `cut` and `guide` belong to both. */
 export const SUBJECT_LAYERS: Readonly<Record<Subject, readonly LayerId[]>> = {
   earth: ['coastlines', 'borders', 'rivers', 'lakes', 'land', 'ocean', 'graticule'],
   sky: ['stars', 'starHoles', 'constellations', 'milkyWay', 'skyGrid', 'ecliptic'],
+  moon: ['maria', 'craters', 'craterShadows', 'moonGrid'],
 }
 
 /** True if `id` is drawn for `subject`. */
@@ -129,7 +153,7 @@ export interface LayerStyle {
   readonly previewWidth: number
 }
 
-const [C00, C01, C02, C03, C04, C05, C06] = LIGHTBURN_PALETTE
+const [C00, C01, C02, C03, C04, C05, C06, C07] = LIGHTBURN_PALETTE
 
 /** Defaults from plan §3. */
 export const DEFAULT_LAYER_STYLES: Readonly<Record<LayerId, LayerStyle>> = {
@@ -160,6 +184,18 @@ export const DEFAULT_LAYER_STYLES: Readonly<Record<LayerId, LayerStyle>> = {
     mode: 'stroke',
     previewWidth: 1,
   },
+  // Maria default to their outline: a full fill is a long engrave (plan §16.2).
+  maria: { label: 'Maria', enabled: true, color: C01, mode: 'stroke', previewWidth: 1 },
+  craters: { label: 'Craters', enabled: true, color: C00, mode: 'stroke', previewWidth: 1 },
+  moonGrid: { label: 'Lunar grid', enabled: false, color: C03, mode: 'stroke', previewWidth: 1 },
+  // Its own colour, so LightBurn can engrave shadows at a different power (plan §16.8).
+  craterShadows: {
+    label: 'Crater shadows',
+    enabled: true,
+    color: C07,
+    mode: 'fill',
+    previewWidth: 1,
+  },
 }
 
 export const isFillLayer = (id: LayerId): id is FillLayerId =>
@@ -177,5 +213,7 @@ export function fillsNeeded(styles: Readonly<Record<LayerId, LayerStyle>>) {
     ocean: on('ocean'),
     milkyWay: on('milkyWay'),
     stars: on('stars'),
+    maria: on('maria'),
+    craterShadows: on('craterShadows'),
   }
 }
