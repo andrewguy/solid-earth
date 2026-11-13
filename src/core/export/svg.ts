@@ -77,12 +77,15 @@ function layerPaths(
     const d = linesD(art.lines[id])
     if (style.enabled && d) out[id] = strokePath(d, style.color)
   }
+  if (styles.guide.enabled && art.guide) {
+    out.guide = strokePath(pathData(art.guide, true), styles.guide.color)
+  }
   if (styles.cut.enabled) out.cut = strokePath(pathData(art.cutOutline, true), styles.cut.color)
   return out
 }
 
-/** Output layers in engraving order: fills, then lines, then the cut on top. */
-const LAYER_ORDER: readonly LayerId[] = [...FILL_LAYERS, ...LINE_LAYERS, 'cut']
+/** Output layers in engraving order: fills, then lines, the sanding guide, and the cut on top. */
+const LAYER_ORDER: readonly LayerId[] = [...FILL_LAYERS, ...LINE_LAYERS, 'guide', 'cut']
 
 const layerGroup = (id: string, label: string, content: string) =>
   `  <g id="layer-${id}" inkscape:groupmode="layer" inkscape:label="${escapeXml(label)}">\n` +

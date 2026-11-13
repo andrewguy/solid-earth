@@ -247,6 +247,7 @@ describe('ZIP export', () => {
     fingerWidthMm: 10,
     fingerTip: 'fill',
     fingerClearanceMm: 0.1,
+    bevelAllowanceMm: 0.5,
     nest: DEFAULT_NEST_SETTINGS,
     nestLayout: null,
   }

@@ -22,9 +22,10 @@ import { Slider } from '@/ui/components/ui/slider'
 import { Switch } from '@/ui/components/ui/switch'
 import { useAppStore } from '@/ui/store'
 
-/** Row order follows plan §6.4. */
+/** Row order follows plan §6.4; the sanding guide (plan §14) only shows in bevel mode. */
 const ROWS: readonly LayerId[] = [
   'cut',
+  'guide',
   'coastlines',
   'borders',
   'rivers',
@@ -93,7 +94,7 @@ function LayerSettings({ id }: { id: LayerId }) {
             {index ? `layer ${index}` : 'not a palette colour'}.
           </p>
         </div>
-        {id !== 'cut' && (
+        {id !== 'cut' && id !== 'guide' && (
           <div className="space-y-2">
             <Label className="text-xs">Preview line width ({style.previewWidth.toFixed(1)}×)</Label>
             <Slider
@@ -169,10 +170,11 @@ function LayerRow({ id }: { id: LayerId }) {
 
 /** Layer table (plan §6.4): enable, mode, LightBurn colour, preview width. */
 export function LayerTable() {
+  const bevel = useAppStore((s) => s.joint === 'bevel')
   return (
     <>
       <ul className="space-y-1">
-        {ROWS.map((id) => (
+        {ROWS.filter((id) => bevel || id !== 'guide').map((id) => (
           <LayerRow key={id} id={id} />
         ))}
       </ul>

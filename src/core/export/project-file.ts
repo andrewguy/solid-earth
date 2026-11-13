@@ -28,6 +28,7 @@ import {
   type ProjectSettings,
   RESOLUTIONS,
   type Resolution,
+  isBevelAllowance,
 } from '../settings'
 import type { Vec3 } from '../vec3'
 
@@ -294,6 +295,7 @@ export function parseProject(text: string): ParsedProject {
     fingerWidthMm: num('fingerWidthMm', (n) => n > 0 && n < 10000, d.fingerWidthMm),
     fingerTip: choice('fingerTip', FINGER_TIPS, d.fingerTip),
     fingerClearanceMm: num('fingerClearanceMm', (n) => n > -1 && n < 1, d.fingerClearanceMm),
+    bevelAllowanceMm: num('bevelAllowanceMm', isBevelAllowance, d.bevelAllowanceMm),
     nest: parseNest(raw.nest, notes),
     nestLayout: parseLayout(raw.nestLayout, def.faces.length, notes),
   }

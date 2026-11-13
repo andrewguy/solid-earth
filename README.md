@@ -31,6 +31,9 @@ settings, kerf, and assembly.
 - **Finger joints (optional):** interlocking fingers on every edge, sized for your material and
   the angle at each joint, with adjustable finger width and clearance and a choice of fingers
   that fill the joint (sand flush) or sit flush.
+- **Sanded bevel joints (optional):** panels are cut a small sanding allowance oversize, with the
+  true edge engraved as a sanding guide. Sand each edge to the bevel angle shown until the front
+  reaches the guide, and the outer faces meet with no groove.
 - **Sheet nesting:** lay all panels out on sheets of any size (presets for common stock and
   laser beds), with a gap and margin measured on the real cut path and a rotation choice that can
   keep plywood grain consistent. A genetic optimiser minimises the sheet count and keeps the
@@ -48,6 +51,7 @@ Everything runs in the browser. There is no server and nothing is uploaded.
 | Engraved lines (coastlines, borders, rivers) | 00              | `#000000` |
 | Engraved fills (land, lakes, ocean)          | 01              | `#0000FF` |
 | Score (graticule)                            | 03              | `#00E000` |
+| Sanding guide (bevel joints only)            | 04              | `#D0D000` |
 
 All colours can be changed per layer from LightBurn's palette. The optional sheet outline uses
 LightBurn's T1 tool layer (`#F36926`), which is never cut; see the maker guide before turning it

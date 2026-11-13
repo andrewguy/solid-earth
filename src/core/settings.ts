@@ -31,35 +31,48 @@ export interface ProjectSettings {
   /** Kerf compensation (plan §3): off by default so LightBurn's own offset can be used. */
   readonly kerfEnabled: boolean
   readonly kerfMm: number
-  /** Joint style (plan §12): square-cut butt joints, or finger joints. */
+  /** Joint style: square-cut butt joints, finger joints (plan §12) or sanded bevels (§14). */
   readonly joint: JointKind
   readonly fingerWidthMm: number
   readonly fingerTip: FingerTip
   /** Per side; negative for a press fit. */
   readonly fingerClearanceMm: number
+  /** Bevel mode: how far the cut line sits outside the engraved sanding guide (plan §14). */
+  readonly bevelAllowanceMm: number
   /** Sheet nesting (plan §13). */
   readonly nest: NestSettings
   /** The last nesting result, or null; stale when `nestInputKey` no longer matches. */
   readonly nestLayout: NestLayout | null
 }
 
-export const JOINT_KINDS = ['butt', 'finger'] as const
+export const JOINT_KINDS = ['butt', 'finger', 'bevel'] as const
 export type JointKind = (typeof JOINT_KINDS)[number]
 export const FINGER_TIPS: readonly FingerTip[] = ['fill', 'flush']
 
 /** The joint options the pipeline needs, from the project settings. */
 export function jointOptions(
-  s: Pick<ProjectSettings, 'joint' | 'fingerWidthMm' | 'fingerTip' | 'fingerClearanceMm'>,
+  s: Pick<
+    ProjectSettings,
+    'joint' | 'fingerWidthMm' | 'fingerTip' | 'fingerClearanceMm' | 'bevelAllowanceMm'
+  >,
 ): JointOptions {
-  return s.joint === 'finger'
-    ? {
+  switch (s.joint) {
+    case 'finger':
+      return {
         kind: 'finger',
         widthMm: s.fingerWidthMm,
         tip: s.fingerTip,
         clearanceMm: s.fingerClearanceMm,
       }
-    : { kind: 'butt' }
+    case 'bevel':
+      return { kind: 'bevel', allowanceMm: s.bevelAllowanceMm }
+    default:
+      return { kind: 'butt' }
+  }
 }
+
+/** Valid sanding allowances in mm (plan §14.2). */
+export const isBevelAllowance = (mm: number) => mm >= 0 && mm < 5
 
 export const GRATICULE_INTERVALS = [5, 10, 15, 20, 30] as const
 
@@ -79,6 +92,7 @@ export const DEFAULT_SETTINGS: ProjectSettings = {
   fingerWidthMm: 10,
   fingerTip: 'fill',
   fingerClearanceMm: 0.1,
+  bevelAllowanceMm: 2,
   nest: DEFAULT_NEST_SETTINGS,
   nestLayout: null,
 }

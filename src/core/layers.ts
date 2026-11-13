@@ -49,7 +49,8 @@ export function lightBurnIndex(color: string): string | null {
 export type LineLayerId = 'coastlines' | 'borders' | 'rivers' | 'graticule'
 /** Map layers that can be filled (and optionally stroked along their shorelines). */
 export type FillLayerId = 'land' | 'lakes' | 'ocean'
-export type LayerId = 'cut' | LineLayerId | FillLayerId
+/** `guide` is the sanding guide, output only for sanded bevel joints (plan §14). */
+export type LayerId = 'cut' | 'guide' | LineLayerId | FillLayerId
 
 /**
  * Linework sources prepared from the data. Fill layers never stroke their clipped polygon
@@ -81,7 +82,7 @@ export interface LayerStyle {
   readonly previewWidth: number
 }
 
-const [C00, C01, C02, C03] = LIGHTBURN_PALETTE
+const [C00, C01, C02, C03, C04] = LIGHTBURN_PALETTE
 
 /** Defaults from plan §3. */
 export const DEFAULT_LAYER_STYLES: Readonly<Record<LayerId, LayerStyle>> = {
@@ -93,6 +94,7 @@ export const DEFAULT_LAYER_STYLES: Readonly<Record<LayerId, LayerStyle>> = {
   land: { label: 'Land', enabled: false, color: C01, mode: 'fill', previewWidth: 1 },
   ocean: { label: 'Ocean', enabled: false, color: C01, mode: 'fill', previewWidth: 1 },
   graticule: { label: 'Graticule', enabled: false, color: C03, mode: 'stroke', previewWidth: 1 },
+  guide: { label: 'Sanding guide', enabled: true, color: C04, mode: 'stroke', previewWidth: 1 },
 }
 
 export const isFillLayer = (id: LayerId): id is FillLayerId =>

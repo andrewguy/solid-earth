@@ -3,7 +3,7 @@ import { useMemo } from 'react'
 
 import { faceFileName } from '@/core/export/zip'
 import { faceFingers, fingerParams } from '@/core/joints'
-import { faceEdges, panelOutline, vGap } from '@/core/panel'
+import { bevelTiltDeg, faceEdges, panelOutline, vGap } from '@/core/panel'
 import { buildFrames } from '@/core/polyhedron/faces'
 import { longestEdge } from '@/core/pipeline'
 import { Button } from '@/ui/components/ui/button'
@@ -27,13 +27,15 @@ export function FaceDialog() {
   const edgeLengthMm = useAppStore((s) => s.edgeLengthMm)
   const thicknessMm = useAppStore((s) => s.thicknessMm)
   const finger = useAppStore((s) => s.joint === 'finger')
+  const bevel = useAppStore((s) => s.joint === 'bevel')
   const fingerWidthMm = useAppStore((s) => s.fingerWidthMm)
   const fingerTip = useAppStore((s) => s.fingerTip)
   const fingerClearanceMm = useAppStore((s) => s.fingerClearanceMm)
   const frames = useMemo(() => buildFrames(def), [def])
   const mmPerUnit = edgeLengthMm / longestEdge(frames)
   const edges = index === null ? [] : faceEdges(frames, index)
-  // Edge lengths of the panel as cut; null if the material is too thick for it.
+  // Edge lengths of the square-cut panel: the cut in butt mode, the back face in bevel mode;
+  // null if the material is too thick for it.
   const cutLengths = useMemo(() => {
     if (index === null) return null
     try {
@@ -81,10 +83,12 @@ export function FaceDialog() {
               <tr className="text-left">
                 <th className="font-normal">Joins face</th>
                 <th className="font-normal">True edge</th>
-                <th className="font-normal">{fingerCounts ? 'Segments' : 'Cut edge'}</th>
+                <th className="font-normal">
+                  {fingerCounts ? 'Segments' : bevel ? 'Back edge' : 'Cut edge'}
+                </th>
                 <th className="font-normal">Dihedral</th>
-                <th className="font-normal">Inset</th>
-                <th className="font-normal">Outer groove</th>
+                <th className="font-normal">{bevel ? 'Bevel tilt' : 'Inset'}</th>
+                <th className="font-normal">{bevel ? 'Back width' : 'Outer groove'}</th>
               </tr>
             </thead>
             <tbody className="font-mono">
@@ -106,10 +110,19 @@ export function FaceDialog() {
                           : `${cut.toFixed(2)} mm`}
                     </td>
                     <td>{e.dihedralDeg.toFixed(2)}°</td>
-                    <td>{gap.insetMm.toFixed(2)} mm</td>
-                    <td>
-                      {gap.angleDeg.toFixed(2)}° / {gap.grooveMm.toFixed(2)} mm
-                    </td>
+                    {bevel ? (
+                      <>
+                        <td>{bevelTiltDeg(e.dihedral).toFixed(2)}°</td>
+                        <td>{gap.insetMm.toFixed(2)} mm</td>
+                      </>
+                    ) : (
+                      <>
+                        <td>{gap.insetMm.toFixed(2)} mm</td>
+                        <td>
+                          {gap.angleDeg.toFixed(2)}° / {gap.grooveMm.toFixed(2)} mm
+                        </td>
+                      </>
+                    )}
                   </tr>
                 )
               })}

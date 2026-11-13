@@ -4,7 +4,7 @@ import { toast } from 'sonner'
 
 import { rotationReadout } from '@/core/geo/rotation'
 import { type FingerTip, fingerProfile } from '@/core/joints'
-import { dihedralGroups } from '@/core/panel'
+import { bevelTiltDeg, dihedralGroups } from '@/core/panel'
 import { buildFrames } from '@/core/polyhedron/faces'
 import { importPolyhedron } from '@/core/polyhedron/import'
 import { PolyhedronError } from '@/core/polyhedron/preprocess'
@@ -17,6 +17,7 @@ import {
   type JointKind,
   RESOLUTIONS,
   type Resolution,
+  isBevelAllowance,
 } from '@/core/settings'
 
 import { Button } from '@/ui/components/ui/button'
@@ -65,11 +66,15 @@ function circumDiameterMm(def: PolyhedronDef, edgeMm: number): number {
   return (2 * radius * edgeMm) / longest
 }
 
-/** Dihedral angles, edge insets and outer V-grooves for square-cut butt joints (plan §6.3). */
+/**
+ * Per dihedral angle: insets and outer V-grooves for butt joints (plan §6.3), finger tip and notch
+ * positions (§12), or bevel tilt and back-face width for sanded bevels (§14).
+ */
 function PanelInfo() {
   const def = useAppStore((s) => s.polyhedron.def)
   const thicknessMm = useAppStore((s) => s.thicknessMm)
   const finger = useAppStore((s) => s.joint === 'finger')
+  const bevel = useAppStore((s) => s.joint === 'bevel')
   const fingerTip = useAppStore((s) => s.fingerTip)
   const clearanceMm = useAppStore((s) => s.fingerClearanceMm)
   const groups = useMemo(() => dihedralGroups(buildFrames(def), thicknessMm), [def, thicknessMm])
@@ -81,9 +86,18 @@ function PanelInfo() {
           <tr className="text-left">
             <th className="font-normal">Edges</th>
             <th className="font-normal">Dihedral</th>
-            <th className="font-normal">V</th>
-            <th className="text-right font-normal">{finger ? 'Tip' : 'Inset'}</th>
-            <th className="text-right font-normal">{finger ? 'Notch' : 'Groove'}</th>
+            {bevel ? (
+              <>
+                <th className="text-right font-normal">Tilt</th>
+                <th className="text-right font-normal">Back</th>
+              </>
+            ) : (
+              <>
+                <th className="font-normal">V</th>
+                <th className="text-right font-normal">{finger ? 'Tip' : 'Inset'}</th>
+                <th className="text-right font-normal">{finger ? 'Notch' : 'Groove'}</th>
+              </>
+            )}
           </tr>
         </thead>
         <tbody className="font-mono">
@@ -95,16 +109,33 @@ function PanelInfo() {
               <tr key={g.dihedralDeg.toFixed(2)}>
                 <td>{g.edgeCount}</td>
                 <td>{g.dihedralDeg.toFixed(2)}°</td>
-                <td>{g.vGapDeg.toFixed(2)}°</td>
-                <td className="text-right">{mm(prof ? prof.tip : g.insetMm)}</td>
-                <td className="text-right">{mm(prof ? prof.notch : g.grooveMm)}</td>
+                {bevel ? (
+                  <>
+                    <td className="text-right">
+                      {bevelTiltDeg(g.dihedralDeg * DEG_TO_RAD).toFixed(2)}°
+                    </td>
+                    <td className="text-right">{mm(g.insetMm)}</td>
+                  </>
+                ) : (
+                  <>
+                    <td>{g.vGapDeg.toFixed(2)}°</td>
+                    <td className="text-right">{mm(prof ? prof.tip : g.insetMm)}</td>
+                    <td className="text-right">{mm(prof ? prof.notch : g.grooveMm)}</td>
+                  </>
+                )}
               </tr>
             )
           })}
         </tbody>
       </table>
       <p className="text-xs text-muted-foreground">
-        {finger ? (
+        {bevel ? (
+          <>
+            Sanded bevels ({thicknessMm} mm material): set the sander to Tilt from square and sand
+            each edge until the front just reaches the engraved guide. The bevel then ends Back in
+            from the edge on the back face.
+          </>
+        ) : finger ? (
           <>
             Finger joints ({thicknessMm} mm material): measured inward from the true edge, the
             finger ends at Tip (negative: it sticks out past the edge) and the slots go in to Notch.
@@ -136,6 +167,8 @@ function JointSettings() {
   const setFingerTip = useAppStore((s) => s.setFingerTip)
   const fingerClearanceMm = useAppStore((s) => s.fingerClearanceMm)
   const setFingerClearanceMm = useAppStore((s) => s.setFingerClearanceMm)
+  const bevelAllowanceMm = useAppStore((s) => s.bevelAllowanceMm)
+  const setBevelAllowanceMm = useAppStore((s) => s.setBevelAllowanceMm)
   return (
     <>
       <div className="grid grid-cols-[1fr_10rem] items-center gap-2">
@@ -152,9 +185,28 @@ function JointSettings() {
           <SelectContent>
             <SelectItem value="butt">Butt (square cut)</SelectItem>
             <SelectItem value="finger">Finger joints</SelectItem>
+            <SelectItem value="bevel">Bevel (sanded)</SelectItem>
           </SelectContent>
         </Select>
       </div>
+      {joint === 'bevel' && (
+        <>
+          <NumberField
+            id="bevel-allowance"
+            label="Sanding allowance"
+            unit="mm"
+            value={bevelAllowanceMm}
+            onCommit={setBevelAllowanceMm}
+            step={0.1}
+            accept={isBevelAllowance}
+          />
+          <p className="text-xs text-muted-foreground">
+            Panels are cut this far outside the true edge, which is engraved as a sanding guide.
+            Sand each edge to a bevel until the front reaches the guide: outer faces then meet
+            exactly, with no groove.
+          </p>
+        </>
+      )}
       {joint === 'finger' && (
         <>
           <NumberField

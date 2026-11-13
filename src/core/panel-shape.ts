@@ -1,5 +1,5 @@
 import { BUTT, type FingerParams, type JointOptions, fingerParams, fingeredOutline } from './joints'
-import { panelOutline } from './panel'
+import { bevelOutlines, panelOutline } from './panel'
 import { offsetPolygon } from './planar/clipper'
 import type { PolyhedronFrames } from './polyhedron/faces'
 import { northUpRotation } from './project/orientation'
@@ -13,7 +13,7 @@ export interface PanelShapeOptions {
   readonly kerfMm?: number
   /** Material thickness in mm. 0 / absent = the true face (zero-thickness panels). */
   readonly thicknessMm?: number
-  /** Joint style (plan §12). Default: square-cut butt joints. */
+  /** Joint style (plan §12, §14). Default: square-cut butt joints. */
   readonly joint?: JointOptions
   /**
    * Geographic north in world space. When given, `rotation` is the panel's north-up export
@@ -33,11 +33,13 @@ export interface PanelShape {
   readonly outline: readonly Vec2[]
   /** Path to cut: the outline offset outward by kerf/2, or the outline itself. */
   readonly cutOutline: readonly Vec2[]
+  /** Bevel mode only: the engraved sanding guide (the true face, plan §14.1). */
+  readonly guide?: readonly Vec2[]
   /** North-up export rotation (radians, CCW); export frame = R(rotation) · face frame. */
   readonly rotation: number
 }
 
-/** Finger parameters in model units, or null when the panel has butt joints. */
+/** Finger parameters in model units, or null when the panel has no finger joints. */
 export function panelFingers(
   joint: JointOptions,
   thicknessMm: number,
@@ -48,20 +50,42 @@ export function panelFingers(
     : null
 }
 
+/** One panel in the face's frame, in model units, before kerf. */
+export interface PanelModel {
+  /** The panel as cut (before kerf), CCW. */
+  readonly outline: Vec2[]
+  /** Bevel mode: the engraved sanding guide (the true face). Otherwise null. */
+  readonly guide: Vec2[] | null
+  /** Finger parameters in finger mode, otherwise null. */
+  readonly fingers: FingerParams | null
+}
+
 /**
- * The panel as cut (before kerf) in the face's frame, in model units: fingered when `fingers` is
- * given, otherwise the face with each edge inset for square-cut butt joints.
+ * The panel as cut (before kerf) in the face's frame, in model units: fingered in finger mode,
+ * the true face plus the sanding allowance in bevel mode (plan §14.1), otherwise the face with
+ * each edge inset for square-cut butt joints.
  */
-export function panelModelOutline(
+export function panelModel(
   frames: PolyhedronFrames,
   faceIndex: number,
   thicknessMm: number,
   mmPerUnit: number,
-  fingers: FingerParams | null,
-): Vec2[] {
-  return fingers
+  joint: JointOptions,
+): PanelModel {
+  if (joint.kind === 'bevel') {
+    const { guide, cut } = bevelOutlines(
+      frames,
+      faceIndex,
+      thicknessMm / mmPerUnit,
+      joint.allowanceMm / mmPerUnit,
+    )
+    return { outline: cut, guide, fingers: null }
+  }
+  const fingers = panelFingers(joint, thicknessMm, mmPerUnit)
+  const outline = fingers
     ? fingeredOutline(frames, faceIndex, fingers)
     : panelOutline(frames, faceIndex, thicknessMm / mmPerUnit)
+  return { outline, guide: null, fingers }
 }
 
 /** One panel's cut shape, without projecting any map data. */
@@ -72,13 +96,18 @@ export function panelShape(
 ): PanelShape {
   const face = frames.faces[faceIndex]
   if (!face) throw new Error(`no face ${faceIndex}`)
-  const fingers = panelFingers(joint, thicknessMm, mmPerUnit)
-  const outline = panelModelOutline(frames, faceIndex, thicknessMm, mmPerUnit, fingers).map(
-    ([x, y]): Vec2 => [x * mmPerUnit, y * mmPerUnit],
-  )
+  const model = panelModel(frames, faceIndex, thicknessMm, mmPerUnit, joint)
+  const toMm = (pts: readonly Vec2[]) => pts.map(([x, y]): Vec2 => [x * mmPerUnit, y * mmPerUnit])
+  const outline = toMm(model.outline)
   const cutOutline = kerfMm > 0 ? offsetPolygon(outline, kerfMm / 2) : outline
   const rotation = north ? northUpRotation(face, north) : 0
-  return { faceIndex, outline, cutOutline, rotation }
+  return {
+    faceIndex,
+    outline,
+    cutOutline,
+    ...(model.guide && { guide: toMm(model.guide) }),
+    rotation,
+  }
 }
 
 /** Cut shapes for every face. */

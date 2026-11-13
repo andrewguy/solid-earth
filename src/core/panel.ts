@@ -22,6 +22,14 @@ export function vGap(dihedralRad: number, thicknessMm: number) {
   }
 }
 
+/**
+ * Sanded bevel (plan §14.1): the bevel lies on the plane bisecting the dihedral, so it is tilted
+ * from square by V/2 = 90° − θ/2. Its width on the back face is the butt inset.
+ */
+export function bevelTiltDeg(dihedralRad: number): number {
+  return ((Math.PI - dihedralRad) / 2) * DEG
+}
+
 /** How far a square-cut edge is pulled in from the true edge: t·tan(V/2) = t / tan(θ/2). */
 export function edgeInset(dihedralRad: number, thickness: number): number {
   return thickness / Math.tan(dihedralRad / 2)
@@ -153,6 +161,48 @@ export function panelOutline(
     }
     throw err
   }
+}
+
+/** A sanded bevel panel in the face's (u, v) frame, model units (plan §14.1). */
+export interface BevelOutlines {
+  /** The engraved sanding guide: the true face, where the front of the sanded panel ends. */
+  readonly guide: Vec2[]
+  /** The cut line (before kerf): the guide with every edge moved out by the allowance. */
+  readonly cut: Vec2[]
+}
+
+/**
+ * Sanded bevel panel outlines: butt mode at thickness 0 plus an offset cut. `thickness` moves no
+ * line; it only checks that the back face (the square-cut butt panel) still exists. `thickness`
+ * and `allowance` are in model units.
+ */
+export function bevelOutlines(
+  frames: PolyhedronFrames,
+  faceIndex: number,
+  thickness: number,
+  allowance: number,
+): BevelOutlines {
+  const face = frames.faces[faceIndex]
+  if (!face) throw new Error(`no face ${faceIndex}`)
+  try {
+    if (thickness > 0) panelOutline(frames, faceIndex, thickness)
+  } catch (err) {
+    if (err instanceof PanelError) {
+      throw new PanelError(
+        err.message.replace('square-cut joints leave no panel', 'bevels leave no back face'),
+      )
+    }
+    throw err
+  }
+  const guide = [...face.vertices2D]
+  const cut =
+    allowance > 0
+      ? insetPolygon(
+          guide,
+          guide.map(() => -allowance),
+        )
+      : [...guide]
+  return { guide, cut }
 }
 
 /**

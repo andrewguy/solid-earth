@@ -21,7 +21,16 @@ export interface FingerOptions {
   readonly clearanceMm: number
 }
 
-export type JointOptions = { readonly kind: 'butt' } | ({ readonly kind: 'finger' } & FingerOptions)
+/** Sanded bevel settings (plan §14), in mm. */
+export interface BevelOptions {
+  /** How far the cut line sits outside the engraved sanding guide (the true edge). */
+  readonly allowanceMm: number
+}
+
+export type JointOptions =
+  | { readonly kind: 'butt' }
+  | ({ readonly kind: 'finger' } & FingerOptions)
+  | ({ readonly kind: 'bevel' } & BevelOptions)
 
 export const BUTT: JointOptions = { kind: 'butt' }
 

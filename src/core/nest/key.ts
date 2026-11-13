@@ -29,7 +29,11 @@ function hash53(s: string): string {
 export function nestInputKey(s: ProjectSettings): string {
   const n = s.nest
   const joint =
-    s.joint === 'finger' ? ['finger', s.fingerWidthMm, s.fingerTip, s.fingerClearanceMm] : ['butt']
+    s.joint === 'finger'
+      ? ['finger', s.fingerWidthMm, s.fingerTip, s.fingerClearanceMm]
+      : s.joint === 'bevel'
+        ? ['bevel', s.bevelAllowanceMm]
+        : ['butt']
   // q and −q are the same rotation.
   const [x, y, z, w] = s.rotation
   const sign = w < 0 || (w === 0 && (z < 0 || (z === 0 && (y < 0 || (y === 0 && x < 0))))) ? -1 : 1

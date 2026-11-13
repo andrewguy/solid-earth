@@ -36,7 +36,7 @@ A client-side web app that takes vector world-map data (countries, coastlines, r
 ### 2.2 Later releases (backlog, rough priority order)
 1. Paper/card mode: unfolded net export on a single sheet with fold/score lines and glue tabs.
 2. Assembly aids: edge/face ID labels, assembly guide sheet.
-3. Bevel joints.
+3. Bevel joints. **Scoped 2026-11-13; see §14.**
 4. Nested sheet export for a given laser bed size. **Done 2026-11-13; see §13.**
 5. Internal frame/connector generation.
 6. Finger joints. **Scoped 2026-11-11; see §12.**
@@ -752,3 +752,135 @@ several workers.
 - **Telling panels apart on sheets.** There are no labels (§13.1), so parts are matched to faces
   through the face previews (rotation mode *None* makes them identical). A possible follow-up is
   showing face numbers over the sheet preview in the app only (not exported).
+
+---
+
+## 14. Sanded bevel joints (scoped and implemented 2026-11-13)
+
+A third joint style. Panels are cut slightly oversize, and the maker sands each edge to a bevel
+(a mitre) so neighbouring panels meet at the outer surface with no V-groove. The panels are
+still laser-cut square. An engraved **sanding guide** on the front marks where the bevel must
+meet the map face.
+
+### 14.1 How it works
+
+Bevel mode is **butt mode at thickness 0, plus an offset cut**. After sanding, the outer faces
+of neighbouring panels meet exactly at the true edges, so the front of every panel is the true
+face, just as with zero-thickness panels:
+
+1. **Sanding guide (engraved):** the thickness-0 panel outline, i.e. the true face
+   (`face.vertices2D`), output as a thin engraved line instead of a cut.
+2. **Cut line:** the guide with every edge moved outward by the **sanding allowance**, keeping
+   sharp corners (`insetPolygon` with negative insets). Kerf compensation, if on, then offsets
+   this cut path as usual.
+3. **3D preview:** unchanged. It shows the true face, which is the sanded result.
+
+It differs from thickness 0 in three ways:
+
+- **The map runs out to the cut line** (§14.2), so artwork is clipped to the cut polygon rather
+  than the true face.
+- **Thickness is still used, but only for checks and information.** It moves no line in the
+  SVG. It gives each edge's bevel tilt and back-face width, and the "too thick" check: the back
+  face is the butt-mode panel, which must still exist.
+- **Nesting uses the larger cut outline.**
+
+**Why it closes.** With dihedral θ, thickness t and V = 180° − θ, each edge's bevel lies on the
+plane bisecting the dihedral. It passes through the true edge on the front and meets the back
+at the butt line, t·tan(V/2) in (the same polygon as `panelOutline`). Neighbours share this
+plane, so panels meet without overlap at edges and corners. The bevel's tilt from square is V/2
+(20.9° on an icosahedron, 45° on a cube). The maker sands at V/2 until the front edge reaches
+the guide; if the angle is right, the back edge then falls on the butt line.
+
+### 14.2 Decisions
+
+| Topic | Decision |
+|---|---|
+| Joint selection | A third global joint kind, **Bevel (sanded)**, alongside butt and finger. No per-edge overrides. |
+| Guide line | Engraved on the front at the **true face edge**: a closed polygon, the face's own `vertices2D`. |
+| Allowance | User setting, **default 2 mm** (originally 0.5 mm; raised 2026-11-13 to leave more room for sanding), accepts 0 ≤ a < 5 mm. At 0 the cut line coincides with the guide. |
+| Corners | **Sharp.** Each edge moves straight out, so acute corners reach further (2 × allowance at 60°). |
+| Guide layer | A new output layer, **Sanding guide**, LightBurn **04 (`#D0D000`)**, on by default, with its own switch and colour in the layer table. It is only output in bevel mode, and its table row only shows in bevel mode. |
+| Map in the allowance | **Runs out to the cut line.** The panel's gnomonic projection simply continues past the true edge, so a slightly under-sanded edge still shows continuous map at the seam. |
+| Edge angles | **Table only.** The Panels tab table shows each angle group's bevel tilt and back-face width. The face dialog shows each edge's angle. Nothing extra is engraved. |
+| Angle convention | **Tilt from square** (V/2), the value a disc-sander table or sanding jig is set to. |
+| Kerf | Unchanged: offsets the cut path (outside the allowance). The guide is engraving, so it is never offset. |
+| Nesting | Uses the larger cut outline automatically. The nest input key includes the joint kind and allowance. |
+
+### 14.3 Out of scope for the first version
+
+Engraved per-edge angle labels or group marks, a printable sanding-jig template, per-edge
+allowance, showing bevels in the 3D preview.
+
+### 14.4 Implementation steps
+
+1. **Joint options and settings** (`src/core/joints.ts`, `src/core/settings.ts`).
+   `JointOptions` gains `{ kind: 'bevel'; allowanceMm }`. `JOINT_KINDS` becomes
+   `['butt', 'finger', 'bevel']`. `ProjectSettings.bevelAllowanceMm` (default 0.5) and
+   `jointOptions()` map it through. Add `bevelTiltDeg(dihedral) = V/2` beside `vGap`.
+2. **Panel geometry** (`src/core/panel.ts`, `src/core/panel-shape.ts`). Add
+   `bevelOutlines(frames, face, thickness, allowance)` returning `{ guide, cut }` in model
+   units: `guide` is the true face and `cut` is `insetPolygon(face, −allowance)` for every
+   edge. It first calls `panelOutline` (the back face) so a too-thick material throws the same
+   `PanelError`, with wording that mentions bevels. `panelModelOutline` returns the cut polygon
+   in bevel mode, and `PanelShape` gains an optional `guide`. Tests: the guide equals the face;
+   each cut edge is parallel to its true edge at exactly the allowance; the cut is convex and
+   contains the guide; allowance 0 gives cut = guide; too thick throws; `panelShape` in bevel
+   mode matches `FaceArtwork` rotated back (the existing §13.4 step 1 property, extended).
+3. **Artwork** (`src/core/pipeline.ts`). In bevel mode the panel is convex but reaches past
+   the true edge, so clip on the sphere to `polygonConePlanes(face, cut)`, and cull with
+   `polygonCap` of the cut polygon instead of `faceCap`, otherwise lines just outside the face
+   would be dropped. No 2D clipping is needed. The ocean fill region is the cut polygon.
+   `FaceArtwork` gains an optional `guide` (rounded like the outline). Tests: a meridian
+   crossing an edge now ends on the cut line, not the true edge; fills reach the cut line; butt
+   and finger output are byte-identical to before.
+4. **Layer and SVG** (`src/core/layers.ts`, `src/core/export/svg.ts`). Add `'guide'` to
+   `LayerId` and `DEFAULT_LAYER_STYLES` (label "Sanding guide", `#D0D000`, stroke).
+   `layerPaths` emits it only when `art.guide` is present. `LAYER_ORDER` becomes fills, lines,
+   guide, cut. Sheet SVGs share `layerPaths`, so they pick it up too. Tests: the guide layer is
+   present in bevel mode and absent otherwise; its colour maps to LightBurn index 04; the SVG
+   bounds come from the cut path.
+5. **Persistence and nesting** (`src/core/export/project-file.ts`, `src/core/nest/key.ts`).
+   Parse `bevelAllowanceMm` with the default and range check. `parseLayerStyles` already fills
+   in missing layers from the defaults, so older files gain the guide layer. The schema stays
+   at 1 (additive fields). `nestInputKey` adds `['bevel', allowance]`. Tests: round trip;
+   an older file loads with defaults; the key changes with the allowance and with the joint kind.
+6. **Worker plumbing** (`src/worker/projector.ts`, `src/worker/nester.ts`, `src/ui/store.ts`).
+   Pass the new joint options through, and add `bevelAllowanceMm` and its setter to the store
+   and `selectSettings`. Check that the projection reruns when the allowance changes.
+7. **UI** (`src/ui/layout/LeftPanel.tsx`, `LayerTable.tsx`, `FaceDialog.tsx`).
+   - Joints select gains "Bevel (sanded)". In bevel mode, show the allowance field (mm, step
+     0.1) and a short note: sand each edge at the tilt shown until the front edge reaches the
+     engraved guide.
+   - `PanelInfo` columns in bevel mode: Edges, Dihedral, **Tilt** (V/2), **Back** (t·tan(V/2),
+     the bevel's width on the back face). The note under the table explains both.
+   - Layer table: the Sanding guide row only in bevel mode.
+   - Face dialog: per-edge tilt in bevel mode. Cut lengths show the true-edge length (front
+     face after sanding).
+   - 3D preview: no change. Its texture covers the true face, which is the sanded result.
+8. **Docs.** A "Sanded bevel joints" section in `docs/MAKING.md`: sanding-jig set-up, sanding
+   to the guide, running the guide layer as a light line, and checking the angle on a test
+   pair. Also update the README features and layer table, the About dialog's Panels step and
+   layers list, and record implementation notes in §14.5.
+
+### 14.5 Implementation notes
+
+- `panelModelOutline` became `panelModel(frames, face, thicknessMm, mmPerUnit, joint)`, returning
+  `{ outline, guide, fingers }`, so `panelShape` and `buildFaceArtwork` share one switch on the
+  joint kind. `PanelShape` and `FaceArtwork` carry `guide` only in bevel mode.
+- `bevelOutlines` calls `panelOutline` purely as the back-face check and rewrites its error to
+  say "bevels leave no back face".
+- Artwork in bevel mode clips to the cut polygon's cone planes and culls with `polygonCap` of the
+  cut polygon. At allowance 0 the cut is the guide, so it falls back to the face's own planes and
+  cap, exactly as thickness 0.
+- The guide layer is drawn under the cut (fills, lines, guide, cut). Its preview-width setting is
+  hidden because the 3D texture doesn't draw it.
+- The face dialog's third column becomes **Back edge** (the square-cut panel's edge lengths, i.e.
+  the back face) and the last two **Bevel tilt** and **Back width**.
+- Butt and finger SVG output was checked byte-identical before and after the change (SHA-256 over
+  three shapes, both joint kinds, thickness 0 and 3 mm, kerf on and off).
+
+### 14.6 Open points to confirm on real cuts
+
+- Whether the 2 mm default suits 3 mm ply and acrylic, or is more sanding than needed.
+- Whether the guide shows well enough on the 3D preview texture's edge to be worth drawing
+  there (currently not drawn).

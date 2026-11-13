@@ -12,6 +12,7 @@ import {
   type JointKind,
   type ProjectSettings,
   type Resolution,
+  isBevelAllowance,
 } from '@/core/settings'
 import type { NestJob } from '@/ui/nester-client'
 import type { NestProgress } from '@/worker/nester'
@@ -70,6 +71,7 @@ function fromSettings(s: ProjectSettings) {
     fingerWidthMm: s.fingerWidthMm,
     fingerTip: s.fingerTip,
     fingerClearanceMm: s.fingerClearanceMm,
+    bevelAllowanceMm: s.bevelAllowanceMm,
     nest: s.nest,
     nestLayout: s.nestLayout,
   }
@@ -92,6 +94,7 @@ interface AppState {
   fingerWidthMm: number
   fingerTip: FingerTip
   fingerClearanceMm: number
+  bevelAllowanceMm: number
   nest: NestSettings
   /** Saved with the project; may be stale (see `currentLayout`). */
   nestLayout: NestLayout | null
@@ -137,6 +140,7 @@ interface AppState {
   setFingerWidthMm: (mm: number) => void
   setFingerTip: (tip: FingerTip) => void
   setFingerClearanceMm: (mm: number) => void
+  setBevelAllowanceMm: (mm: number) => void
   setNest: (patch: Partial<NestSettings>) => void
   setNestLayout: (layout: NestLayout | null) => void
   setComputing: () => void
@@ -216,6 +220,9 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setFingerClearanceMm: (mm) => {
     if (Number.isFinite(mm) && mm > -1 && mm < 1) set({ fingerClearanceMm: mm })
   },
+  setBevelAllowanceMm: (mm) => {
+    if (Number.isFinite(mm) && isBevelAllowance(mm)) set({ bevelAllowanceMm: mm })
+  },
   setNest: (patch) => set((s) => ({ nest: { ...s.nest, ...patch } })),
   setNestLayout: (nestLayout) => set({ nestLayout }),
   setComputing: () => set({ computing: true }),
@@ -249,6 +256,7 @@ export const selectSettings = (s: AppState): ProjectSettings => ({
   fingerWidthMm: s.fingerWidthMm,
   fingerTip: s.fingerTip,
   fingerClearanceMm: s.fingerClearanceMm,
+  bevelAllowanceMm: s.bevelAllowanceMm,
   nest: s.nest,
   nestLayout: s.nestLayout,
 })

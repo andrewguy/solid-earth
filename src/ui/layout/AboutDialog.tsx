@@ -21,6 +21,7 @@ const LAYERS: readonly { colour: string; name: string; use: string }[] = [
   { colour: '#000000', name: 'Engraved lines', use: 'coastlines, borders, rivers' },
   { colour: '#0000FF', name: 'Engraved fills', use: 'land, lakes, ocean' },
   { colour: '#00E000', name: 'Score', use: 'graticule' },
+  { colour: '#D0D000', name: 'Sanding guide', use: 'bevel joints only' },
 ]
 
 function HelpSection({ title, children }: { title: string; children: ReactNode }) {
@@ -79,7 +80,7 @@ export function AboutDialog() {
               </li>
               <li>
                 <strong>Panels:</strong> enter your material thickness, optional kerf compensation,
-                and butt or finger joints.
+                and butt, finger or sanded bevel joints.
               </li>
               <li>
                 <strong>Sheets:</strong> set your sheet or laser bed size, then press{' '}

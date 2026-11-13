@@ -5,7 +5,7 @@ import type { SphereRings } from './geo/lines'
 import type { FillLayerId, LineSourceId } from './layers'
 import { BUTT, type JointOptions, fingerReach, fingerSafeInterior } from './joints'
 import { polygonConePlanes } from './panel'
-import { panelFingers, panelModelOutline } from './panel-shape'
+import { panelModel } from './panel-shape'
 import {
   clipPolylines,
   fromPaths64,
@@ -56,12 +56,15 @@ export interface FaceArtwork {
   readonly rotation: number
   /**
    * The panel as cut (before kerf), CCW: the true face, with each edge inset for square-cut butt
-   * joints when a thickness is given (plan §3), or with finger joints (plan §12). Engraving
-   * covers all of it, including finger tips that reach past the true edge.
+   * joints when a thickness is given (plan §3), with finger joints (plan §12), or the true face
+   * plus the sanding allowance for sanded bevels (plan §14). Engraving covers all of it,
+   * including finger tips and allowance strips that reach past the true edge.
    */
   readonly outline: readonly Vec2[]
   /** Path to cut: the outline offset outward by kerf/2, or the outline itself (plan §3 Kerf). */
   readonly cutOutline: readonly Vec2[]
+  /** Bevel mode only: the engraved sanding guide at the true face edge (plan §14.1). */
+  readonly guide?: readonly Vec2[]
   /** Projected linework per source. */
   readonly lines: Partial<Record<LineSourceId, readonly Vec2[][]>>
   /** Fill regions per layer: CCW exteriors, CW holes (render with even-odd or non-zero). */
@@ -87,7 +90,7 @@ export interface ArtworkOptions {
    * corners (plan §3). 0 / absent = the true face (zero-thickness panels).
    */
   readonly thicknessMm?: number
-  /** Joint style (plan §12). Default: square-cut butt joints. */
+  /** Joint style (plan §12, §14). Default: square-cut butt joints. */
   readonly joint?: JointOptions
 }
 
@@ -208,11 +211,16 @@ export function buildFaceArtwork(
     b: Math.sin(rotation) * mmPerUnit,
   }
 
-  const fingers = panelFingers(joint, thicknessMm, mmPerUnit)
-  const panel = panelModelOutline(frames, faceIndex, thicknessMm, mmPerUnit, fingers)
+  const {
+    outline: panel,
+    guide,
+    fingers,
+  } = panelModel(frames, faceIndex, thicknessMm, mmPerUnit, joint)
   // Butt panels are convex and lie within the true face: clip on the sphere to the panel's cone,
   // which is exact because gnomonic projection maps its planes to the panel edges (with no
   // thickness these are the face's own, shared-edge exact planes), and cull with the face's cap.
+  // Bevel panels are convex too but reach past the true edge by the sanding allowance: clip to
+  // their cone the same way, and cull with a cap around the whole panel (plan §14.1).
   // Fingered panels are not convex and their fingers may reach past the true edge: clip on the
   // sphere to a convex polygon containing the whole panel, then in 2D to the cut outline, so the
   // map runs all the way into the fingers (plan §12.2 Engraving).
@@ -222,10 +230,15 @@ export function buildFaceArtwork(
         face,
         reach.map((p) => planePoint(face, p)),
       )
-    : faceCap(face)
+    : guide && panel !== guide
+      ? polygonCap(
+          face,
+          panel.map((p) => planePoint(face, p)),
+        )
+      : faceCap(face)
   const planes = reach
     ? polygonConePlanes(face, reach)
-    : thicknessMm > 0
+    : thicknessMm > 0 || (guide && panel !== guide)
       ? polygonConePlanes(face, panel)
       : face.edgePlanes
   const outlineExact = panel.map((p) => toOutput(t, p))
@@ -269,7 +282,15 @@ export function buildFaceArtwork(
 
   const outline = finish(outlineExact)
   const cutOutline = kerfMm > 0 ? finish(offsetPolygon(outlineExact, kerfMm / 2)) : outline
-  return { faceIndex, rotation, outline, cutOutline, lines, fills }
+  return {
+    faceIndex,
+    rotation,
+    outline,
+    cutOutline,
+    ...(guide && { guide: finish(guide.map((p) => toOutput(t, p))) }),
+    lines,
+    fills,
+  }
 }
 
 /** Artwork for every face. */

@@ -32,6 +32,7 @@ export function useProjectionSync(): void {
   const fingerWidthMm = useAppStore((s) => s.fingerWidthMm)
   const fingerTip = useAppStore((s) => s.fingerTip)
   const fingerClearanceMm = useAppStore((s) => s.fingerClearanceMm)
+  const bevelAllowanceMm = useAppStore((s) => s.bevelAllowanceMm)
   const dragging = useAppStore((s) => s.dragging)
   // Sheets are rendered only for a layout that is current (plan §13.4 step 9).
   const layout = useAppStore(selectCurrentLayout)
@@ -50,7 +51,13 @@ export function useProjectionSync(): void {
     wasDragging.current = dragging
     if (dragging) return
     const id = ++latest.current
-    const joint = jointOptions({ joint: jointKind, fingerWidthMm, fingerTip, fingerClearanceMm })
+    const joint = jointOptions({
+      joint: jointKind,
+      fingerWidthMm,
+      fingerTip,
+      fingerClearanceMm,
+      bevelAllowanceMm,
+    })
     const { setComputing, setProjection, setArtwork, setError } = useAppStore.getState()
     setComputing()
     const timer = setTimeout(
@@ -101,6 +108,7 @@ export function useProjectionSync(): void {
     fingerWidthMm,
     fingerTip,
     fingerClearanceMm,
+    bevelAllowanceMm,
     dragging,
     layout,
     sheetOutline,

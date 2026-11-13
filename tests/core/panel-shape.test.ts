@@ -14,6 +14,7 @@ const EDGE_MM = 100
 /** An arbitrary tilted north, so export rotations are non-trivial. */
 const NORTH: Vec3 = normalize([0.3, -0.2, 0.9])
 const FINGER: JointOptions = { kind: 'finger', widthMm: 10, tip: 'fill', clearanceMm: 0.1 }
+const BEVEL: JointOptions = { kind: 'bevel', allowanceMm: 0.5 }
 
 /** Export rounds to 0.01 mm; kerf offsets go through Clipper's 0.001 mm grid. */
 const TOL = 0.011
@@ -25,6 +26,8 @@ const CASES: { shape: PresetId; joint: JointOptions; kerfMm: number }[] = [
   { shape: 'truncated-icosahedron', joint: { kind: 'butt' }, kerfMm: 0.15 },
   { shape: 'truncated-icosahedron', joint: FINGER, kerfMm: 0 },
   { shape: 'rhombic-triacontahedron', joint: FINGER, kerfMm: 0.15 },
+  { shape: 'icosahedron', joint: BEVEL, kerfMm: 0 },
+  { shape: 'truncated-icosahedron', joint: BEVEL, kerfMm: 0.15 },
 ]
 
 describe('panelShape', () => {
@@ -46,9 +49,12 @@ describe('panelShape', () => {
         const art = arts[i]!
         expect(s.faceIndex).toBe(i)
         expect(s.rotation).toBeCloseTo(art.rotation, 12)
+        expect(!!s.guide).toBe(joint.kind === 'bevel')
+        expect(!!art.guide).toBe(joint.kind === 'bevel')
         for (const [mine, theirs] of [
           [s.outline, art.outline],
           [s.cutOutline, art.cutOutline],
+          [s.guide ?? [], art.guide ?? []],
         ] as const) {
           expect(mine).toHaveLength(theirs.length)
           mine.forEach((p, k) => {

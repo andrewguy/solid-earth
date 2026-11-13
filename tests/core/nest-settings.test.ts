@@ -63,6 +63,7 @@ describe('nest settings defaults', () => {
 
 describe('nestInputKey', () => {
   const finger: ProjectSettings = { ...base, joint: 'finger' }
+  const bevel: ProjectSettings = { ...base, joint: 'bevel' }
   const restricted = withNest(base, { rotationMode: 'none' })
 
   it('is a stable hex string', () => {
@@ -80,6 +81,9 @@ describe('nestInputKey', () => {
     ['finger width', finger, { ...finger, fingerWidthMm: 12 }],
     ['finger tip', finger, { ...finger, fingerTip: 'flush' }],
     ['finger clearance', finger, { ...finger, fingerClearanceMm: 0 }],
+    ['joint (bevel)', base, bevel],
+    ['bevel vs finger', finger, bevel],
+    ['bevel allowance', bevel, { ...bevel, bevelAllowanceMm: 1 }],
     ['sheet width', base, withNest(base, { sheetWidthMm: 601 })],
     ['sheet height', base, withNest(base, { sheetHeightMm: 401 })],
     ['gap', base, withNest(base, { gapMm: 3 })],
@@ -98,6 +102,8 @@ describe('nestInputKey', () => {
   it.each<[string, ProjectSettings, ProjectSettings]>([
     ['kerf amount while kerf is off', base, { ...base, kerfMm: 0.3 }],
     ['finger settings with butt joints', base, { ...base, fingerWidthMm: 20, fingerTip: 'flush' }],
+    ['bevel allowance with butt joints', base, { ...base, bevelAllowanceMm: 1 }],
+    ['finger settings with bevels', bevel, { ...bevel, fingerWidthMm: 20 }],
     ['resolution', base, { ...base, resolution: '110m' }],
     [
       'layer styles',

@@ -233,7 +233,37 @@ outside even with _Fill joint_.
 
 Thickness matters even more than with butt joints: measure your sheet and enter the real value.
 
-## 11. Troubleshooting
+## 11. Sanded bevel joints
+
+Set _Joints_ to **Bevel (sanded)** on the _Panels_ tab for mitred edges: the outer faces of
+neighbouring panels meet exactly, with no V-groove, so the map runs on unbroken across every
+seam. Each edge is sanded by hand, so this takes the most work of the three joint styles.
+
+How the files work:
+
+- The **true edge** of each panel is engraved as a thin **sanding guide** (layer 04, yellow).
+  Run it as a very light line: it only has to be visible.
+- The **cut line** sits the **sanding allowance** outside the guide (default 2 mm), so every
+  panel comes off the laser slightly oversize. Kerf compensation (if on) applies to the cut line
+  as usual.
+- The map is engraved right out to the cut line, so an edge left a little proud still shows
+  continuous map at the seam.
+
+Sanding:
+
+1. Read each edge's **Tilt** from the table on the _Panels_ tab (the enlarged-face dialog lists
+   it per edge). This is the angle from square to set on a disc-sander table or sanding jig:
+   20.9° for an icosahedron, 45° for a cube. Shapes such as the truncated icosahedron have more
+   than one angle, so check which edge is which in the face dialog.
+2. Sand with the map face up and the bevel undercutting it, so the back face ends up smaller.
+3. Stop when the front edge just reaches the engraved guide. If the angle is right, the bevel's
+   width on the back matches **Back** in the table; measure it to check your angle.
+4. Sand a test pair first and dry-fit them before doing the whole set.
+
+Thickness doesn't move any line in bevel mode, but it sets the back-face width, and the app still
+warns if the material is too thick for the panel.
+
+## 12. Troubleshooting
 
 - **Panels the wrong size in LightBurn:** check that the import didn't apply a DPI scale. The SVGs
   are in mm (`width="…mm"`).
