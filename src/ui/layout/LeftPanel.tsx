@@ -20,6 +20,7 @@ import {
 } from '@/core/settings'
 
 import { Button } from '@/ui/components/ui/button'
+import { AboutDialog } from '@/ui/layout/AboutDialog'
 import { Label } from '@/ui/components/ui/label'
 import { ScrollArea } from '@/ui/components/ui/scroll-area'
 import {
@@ -447,7 +448,10 @@ export function LeftPanel() {
   return (
     <aside className="flex min-h-0 min-w-0 flex-col border-r">
       <header className="flex items-center justify-between gap-2 py-2 pr-2 pl-4">
-        <h1 className="text-sm font-semibold">Solid Earth</h1>
+        <div className="flex items-center gap-1">
+          <h1 className="text-sm font-semibold">Solid Earth</h1>
+          <AboutDialog />
+        </div>
         <ProjectToolbar />
       </header>
       <Separator />
