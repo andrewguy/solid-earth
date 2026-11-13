@@ -1,6 +1,15 @@
 import { DEFAULT_SVG_OPTIONS, faceToSvg, sheetSvgs } from '@/core/export/svg'
 import { prepareLines, preparePolygons } from '@/core/geo/lines'
 import {
+  type SkyData,
+  eclipticAndEquator,
+  mirrorLines,
+  mirrorSky,
+  prepareGreatCircleLines,
+  prepareStars,
+  starMarkers,
+} from '@/core/geo/sky'
+import {
   type CountriesTopology,
   type LakesTopology,
   type LandTopology,
@@ -19,6 +28,7 @@ import {
   type LayerStyle,
   type LineSourceId,
   fillsNeeded,
+  subjectStyles,
 } from '@/core/layers'
 import {
   type FaceArtwork,
@@ -35,7 +45,8 @@ import { BUTT, type JointOptions } from '@/core/joints'
 import { type Quat, rotate } from '@/core/quat'
 import type { NestLayout, NestSettings } from '@/core/nest/types'
 import type { Resolution } from '@/core/settings'
-import type { Vec2 } from '@/core/vec3'
+import type { StarOptions } from '@/core/stars'
+import type { Vec2, Vec3 } from '@/core/vec3'
 
 export interface MapSources {
   readonly land: LandTopology
@@ -46,6 +57,37 @@ export interface MapSources {
 
 /** Loads the raw TopoJSON for a resolution. */
 export type DataLoader = (resolution: Resolution) => Promise<MapSources>
+
+/** Loads the bundled sky data (plan §15.3). */
+export type SkyLoader = () => Promise<SkyData>
+
+/** Which prepared dataset: Earth at a resolution, or the sky either way round (plan §15). */
+export type MapKey = Resolution | 'sky' | 'sky-mirrored'
+
+/** The sky as requested (plan §15.2). Its presence makes the subject the sky. */
+export interface SkyRequest {
+  /** Mirror to the view from Earth. */
+  readonly flip: boolean
+  /** RA/Dec grid spacing in degrees. */
+  readonly gridIntervalDeg: number
+  readonly magLimit: number
+  readonly minDiameterMm: number
+  readonly maxDiameterMm: number
+  /** Used only while the Star holes layer is on. */
+  readonly holeMagLimit: number
+  readonly holeMinDiameterMm: number
+}
+
+/** Live preview star markers: angular radii at magnitude 0 and at the limit. */
+export interface LiveStars {
+  readonly magLimit: number
+  readonly maxRadiusRad: number
+  readonly minRadiusRad: number
+}
+
+/** The dataset a request needs. */
+export const mapKey = (resolution: Resolution, sky?: SkyRequest | null): MapKey =>
+  sky ? (sky.flip ? 'sky-mirrored' : 'sky') : resolution
 
 export interface ProjectRequest {
   /** `id` identifies the shape for caching; `def` must already be preprocessed. */
@@ -61,6 +103,8 @@ export interface ProjectRequest {
   readonly thicknessMm?: number
   /** Joint style; default square-cut butt joints. */
   readonly joint?: JointOptions
+  /** Show the night sky instead of the Earth (plan §15); `resolution` is then ignored. */
+  readonly sky?: SkyRequest | null
   /**
    * false for interactive previews (dragging): skip SVG serialisation and rounding, and only
    * return packed artwork for the 3D textures. Default true.
@@ -94,6 +138,8 @@ export interface PackedFace {
   readonly lines: Partial<Record<LineSourceId, PackedLayer>>
   /** Closed rings (implicitly closed). */
   readonly fills: Partial<Record<FillLayerId, PackedLayer>>
+  /** Star holes inside the panel (closed rings), when the Star holes layer is on. */
+  readonly holes?: PackedLayer
 }
 
 export interface ProjectResult {
@@ -105,6 +151,8 @@ export interface ProjectResult {
   readonly svgs: string[] | null
   /** One SVG per sheet when `sheets` was requested with SVG output, else null. */
   readonly sheetSvgs: string[] | null
+  /** Sky only: stars shown on the whole globe, and how many of them are cut as holes. */
+  readonly starCounts: { readonly shown: number; readonly holes: number } | null
   /** Time spent loading/preparing data and projecting; 0 when served from cache. */
   readonly prepareMs: number
   readonly projectMs: number
@@ -126,38 +174,65 @@ export interface LineSegments3D {
  * so layer-style changes that need no new fills only re-serialise SVG.
  */
 export class Projector {
-  private readonly prepared = new Map<Resolution, Promise<PreparedMap>>()
+  private readonly prepared = new Map<MapKey, Promise<PreparedMap>>()
   private readonly graticules = new Map<number, PreparedLine[]>()
   private frames: { id: string; frames: PolyhedronFrames } | null = null
   private lastArt: { key: string; arts: FaceArtwork[] } | null = null
   private readonly load: DataLoader
+  private readonly loadSky: SkyLoader
 
-  constructor(load: DataLoader) {
+  constructor(
+    load: DataLoader,
+    loadSky: SkyLoader = () => Promise.reject(new Error('no sky data')),
+  ) {
     this.load = load
+    this.loadSky = loadSky
   }
 
-  private preparedMap(resolution: Resolution): Promise<PreparedMap> {
-    let p = this.prepared.get(resolution)
+  private preparedMap(key: MapKey): Promise<PreparedMap> {
+    let p = this.prepared.get(key)
     if (!p) {
-      p = this.load(resolution).then(({ land, countries, lakes, rivers }) =>
-        prepareMap(
-          {
-            coastlines: prepareLines(coastlineLines(land)),
-            borders: prepareLines(borderLines(countries)),
-            rivers: prepareLines(riverLines(rivers)),
-            lakeShores: prepareLines(lakeShoreLines(lakes)),
-          },
-          {
-            land: preparePolygons(landPolygons(land)),
-            lakes: preparePolygons(lakePolygons(lakes)),
-          },
-        ),
-      )
+      p =
+        key === 'sky' || key === 'sky-mirrored'
+          ? this.prepareSky(key === 'sky-mirrored')
+          : this.prepareEarth(key)
       // Don't cache failures: allow a retry.
-      p.catch(() => this.prepared.delete(resolution))
-      this.prepared.set(resolution, p)
+      p.catch(() => this.prepared.delete(key))
+      this.prepared.set(key, p)
     }
     return p
+  }
+
+  /** The sky (plan §15.1), mirrored to the view from Earth if asked. */
+  private async prepareSky(mirrored: boolean): Promise<PreparedMap> {
+    const raw = await this.loadSky()
+    const sky = mirrored ? mirrorSky(raw) : raw
+    const ecliptic = eclipticAndEquator()
+    return prepareMap(
+      {
+        constellations: prepareGreatCircleLines(sky.constellations),
+        ecliptic: prepareGreatCircleLines(mirrored ? mirrorLines(ecliptic) : ecliptic),
+        milkyWayEdge: prepareLines(sky.milkyWayEdges, 0.5, { keepSeams: true }),
+      },
+      { milkyWay: preparePolygons(sky.milkyWay) },
+      prepareStars(sky.stars),
+    )
+  }
+
+  private async prepareEarth(resolution: Resolution): Promise<PreparedMap> {
+    const { land, countries, lakes, rivers } = await this.load(resolution)
+    return prepareMap(
+      {
+        coastlines: prepareLines(coastlineLines(land)),
+        borders: prepareLines(borderLines(countries)),
+        rivers: prepareLines(riverLines(rivers)),
+        lakeShores: prepareLines(lakeShoreLines(lakes)),
+      },
+      {
+        land: preparePolygons(landPolygons(land)),
+        lakes: preparePolygons(lakePolygons(lakes)),
+      },
+    )
   }
 
   private graticule(stepDeg: number): PreparedLine[] {
@@ -170,10 +245,11 @@ export class Projector {
     return g
   }
 
-  /** Prepared data for a resolution plus the graticule. */
-  private async mapFor(resolution: Resolution, graticuleDeg: number): Promise<PreparedMap> {
-    const base = await this.preparedMap(resolution)
-    return { ...base, lines: { ...base.lines, graticule: this.graticule(graticuleDeg) } }
+  /** Prepared data plus the grid: the graticule for the Earth, the RA/Dec grid for the sky. */
+  private async mapFor(key: MapKey, gridDeg: number): Promise<PreparedMap> {
+    const base = await this.preparedMap(key)
+    const id = key === 'sky' || key === 'sky-mirrored' ? 'skyGrid' : 'graticule'
+    return { ...base, lines: { ...base.lines, [id]: this.graticule(gridDeg) } }
   }
 
   private framesFor({ id, def }: ProjectRequest['polyhedron']): PolyhedronFrames {
@@ -181,10 +257,22 @@ export class Projector {
     return this.frames.frames
   }
 
-  async lineSegments(resolution: Resolution, graticuleDeg: number): Promise<LineSegments3D> {
-    const map = await this.mapFor(resolution, graticuleDeg)
+  async lineSegments(key: MapKey, gridDeg: number, stars?: LiveStars): Promise<LineSegments3D> {
+    const map = await this.mapFor(key, gridDeg)
     const lines: Partial<Record<LineSourceId, Float32Array>> = {}
-    for (const [id, ls] of Object.entries(map.lines) as [LineSourceId, PreparedLine[]][]) {
+    const sources = Object.entries(map.lines) as [
+      LineSourceId,
+      readonly { readonly points: readonly Vec3[] }[],
+    ][]
+    if (stars && map.stars) {
+      // Same sizing as the export: linear in magnitude from magnitude 0 to the limit.
+      const { magLimit, maxRadiusRad: big, minRadiusRad: small } = stars
+      const radius = (mag: number) =>
+        big + Math.min(1, Math.max(0, magLimit > 0 ? mag / magLimit : 0)) * (small - big)
+      const markers = starMarkers(map.stars, magLimit, radius)
+      sources.push(['starRings', markers.map((points) => ({ points }))])
+    }
+    for (const [id, ls] of sources) {
       const segments = ls.reduce((n, l) => n + Math.max(0, l.points.length - 1), 0)
       const out = new Float32Array(segments * 6)
       let k = 0
@@ -205,28 +293,51 @@ export class Projector {
     const wantSvg = req.wantSvg ?? true
     const precisionMm = wantSvg ? 0.01 : null
     const mmPerUnit = req.edgeLengthMm / longestEdge(frames)
-    const fills = fillsNeeded(req.layerStyles)
+    const sky = req.sky ?? null
+    // Only the subject's own layers are computed and exported.
+    const styles = subjectStyles(req.layerStyles, sky ? 'sky' : 'earth')
+    const fills = fillsNeeded(styles)
+    const stars: StarOptions | undefined = sky
+      ? {
+          magLimit: sky.magLimit,
+          minDiameterMm: sky.minDiameterMm,
+          maxDiameterMm: sky.maxDiameterMm,
+          holes: styles.starHoles.enabled
+            ? { magLimit: sky.holeMagLimit, minDiameterMm: sky.holeMinDiameterMm }
+            : null,
+        }
+      : undefined
+    const key0 = mapKey(req.resolution, sky)
+    const gridDeg = sky ? sky.gridIntervalDeg : req.graticuleIntervalDeg
     const kerfMm = req.kerfMm ?? 0
     const thicknessMm = req.thicknessMm ?? 0
     const joint = req.joint ?? BUTT
     const key = JSON.stringify([
       req.polyhedron.id,
-      req.resolution,
+      key0,
       req.edgeLengthMm,
       req.rotation,
       precisionMm,
       fills,
-      req.graticuleIntervalDeg,
+      gridDeg,
       kerfMm,
       thicknessMm,
       joint,
+      stars ?? null,
     ])
     let prepareMs = 0
     let projectMs = 0
+    let starCounts: ProjectResult['starCounts'] = null
+    if (stars) {
+      const all = (await this.preparedMap(key0)).stars ?? []
+      const shown = all.filter((st) => st.mag <= stars.magLimit)
+      const holes = stars.holes ? shown.filter((st) => st.mag <= stars.holes!.magLimit).length : 0
+      starCounts = { shown: shown.length, holes }
+    }
     let arts = this.lastArt?.key === key ? this.lastArt.arts : null
     if (!arts) {
       const t0 = performance.now()
-      const map = await this.mapFor(req.resolution, req.graticuleIntervalDeg)
+      const map = await this.mapFor(key0, gridDeg)
       const t1 = performance.now()
       arts = buildAllFaces(frames, rotateMap(map, req.rotation), {
         mmPerUnit,
@@ -235,13 +346,14 @@ export class Projector {
         kerfMm,
         thicknessMm,
         joint,
+        ...(stars && { stars }),
         north: rotate(req.rotation, [0, 0, 1]),
       })
       projectMs = performance.now() - t1
       prepareMs = t1 - t0
       this.lastArt = { key, arts }
     }
-    const options = { ...DEFAULT_SVG_OPTIONS, styles: req.layerStyles }
+    const options = { ...DEFAULT_SVG_OPTIONS, styles }
     let sheets: string[] | null = null
     if (wantSvg && req.sheets) {
       const { layout, nest, outline } = req.sheets
@@ -251,7 +363,7 @@ export class Projector {
       // Artwork is cached, so a layout change only re-serialises SVG.
       sheets = sheetSvgs(arts, layout, nest, {
         strokeMm: DEFAULT_SVG_OPTIONS.strokeMm,
-        styles: req.layerStyles,
+        styles,
         outline,
       })
     }
@@ -262,6 +374,7 @@ export class Projector {
       faces: arts.map(packFace),
       svgs: wantSvg ? arts.map((art) => faceToSvg(art, options)) : null,
       sheetSvgs: sheets,
+      starCounts,
       prepareMs,
       projectMs,
     }
@@ -295,13 +408,13 @@ export function packFace(art: FaceArtwork): PackedFace {
   for (const [id, rings] of Object.entries(art.fills) as [FillLayerId, Vec2[][]][]) {
     fills[id] = pack(rings)
   }
-  return { rotation: art.rotation, lines, fills }
+  return { rotation: art.rotation, lines, fills, ...(art.holes && { holes: pack(art.holes) }) }
 }
 
 /** The ArrayBuffers inside a result, for zero-copy transfer out of the worker. */
 export function transferables(result: ProjectResult): ArrayBuffer[] {
   return result.faces.flatMap((f) =>
-    [...Object.values(f.lines), ...Object.values(f.fills)].flatMap((l) =>
+    [...Object.values(f.lines), ...Object.values(f.fills), f.holes].flatMap((l) =>
       l ? [l.coords.buffer as ArrayBuffer, l.starts.buffer as ArrayBuffer] : [],
     ),
   )

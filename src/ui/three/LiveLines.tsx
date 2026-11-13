@@ -14,11 +14,11 @@ import {
 import type { LayerId, LayerStyle, LineSourceId } from '@/core/layers'
 import type { PolyhedronFrames } from '@/core/polyhedron/faces'
 import type { Quat } from '@/core/quat'
-import type { Resolution } from '@/core/settings'
+import { longestEdge } from '@/core/pipeline'
 import { MAX_LIVE_FACES } from '@/ui/constants'
 import { projector } from '@/ui/projector-client'
 import { useAppStore } from '@/ui/store'
-import type { LineSegments3D } from '@/worker/projector'
+import type { LineSegments3D, LiveStars, MapKey } from '@/worker/projector'
 
 const SOURCES: readonly LineSourceId[] = [
   'graticule',
@@ -26,6 +26,11 @@ const SOURCES: readonly LineSourceId[] = [
   'lakeShores',
   'borders',
   'coastlines',
+  'skyGrid',
+  'ecliptic',
+  'milkyWayEdge',
+  'constellations',
+  'starRings',
 ]
 
 /**
@@ -37,6 +42,8 @@ function liveStyle(
   styles: Readonly<Record<LayerId, LayerStyle>>,
 ): LayerStyle | null {
   if (source === 'lakeShores') return styles.lakes.enabled ? styles.lakes : null
+  if (source === 'milkyWayEdge') return styles.milkyWay.enabled ? styles.milkyWay : null
+  if (source === 'starRings') return styles.stars.enabled ? styles.stars : null
   if (styles[source].enabled) return styles[source]
   if (source === 'coastlines') {
     if (styles.land.enabled) return styles.land
@@ -99,16 +106,23 @@ class SharedUniforms {
   }
 }
 
-/** Fetch (once per resolution + graticule interval) the unit-vector segments from the worker. */
+/**
+ * Fetch (once per dataset, grid interval and star sizing) the unit-vector segments from the
+ * worker.
+ */
 const segmentCache = new Map<string, Promise<LineSegments3D>>()
-function useSegments(resolution: Resolution, graticuleDeg: number): LineSegments3D | null {
-  const key = `${resolution}:${graticuleDeg}`
+function useSegments(
+  mapKey: MapKey,
+  graticuleDeg: number,
+  stars: LiveStars | undefined,
+): LineSegments3D | null {
+  const key = JSON.stringify([mapKey, graticuleDeg, stars ?? null])
   const [loaded, setLoaded] = useState<{ key: string; data: LineSegments3D } | null>(null)
   useEffect(() => {
     let cancelled = false
     let p = segmentCache.get(key)
     if (!p) {
-      p = projector().lineSegments(resolution, graticuleDeg)
+      p = projector().lineSegments(mapKey, graticuleDeg, stars)
       p.catch(() => segmentCache.delete(key))
       segmentCache.set(key, p)
     }
@@ -116,7 +130,9 @@ function useSegments(resolution: Resolution, graticuleDeg: number): LineSegments
     return () => {
       cancelled = true
     }
-  }, [key, resolution, graticuleDeg])
+    // `key` covers every input.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key])
   return loaded?.key === key ? loaded.data : null
 }
 
@@ -135,8 +151,30 @@ export function LiveLines({
 }) {
   const invalidate = useThree((s) => s.invalidate)
   const resolution = useAppStore((s) => s.resolution)
-  const graticuleDeg = useAppStore((s) => s.graticuleIntervalDeg)
-  const segments = useSegments(resolution, graticuleDeg)
+  const sky = useAppStore((s) => s.subject === 'sky')
+  const skyFlip = useAppStore((s) => s.skyFlip)
+  const graticuleDeg = useAppStore((s) => (sky ? s.skyGridIntervalDeg : s.graticuleIntervalDeg))
+  const edgeLengthMm = useAppStore((s) => s.edgeLengthMm)
+  const starMagLimit = useAppStore((s) => s.starMagLimit)
+  const starMinMm = useAppStore((s) => s.starMinDiameterMm)
+  const starMaxMm = useAppStore((s) => s.starMaxDiameterMm)
+  // Star sizes as angles: mm on the panel / (mm per unit × mean face distance).
+  const stars = useMemo((): LiveStars | undefined => {
+    if (!sky) return undefined
+    const mmPerUnit = edgeLengthMm / longestEdge(frames)
+    const dist = frames.faces.reduce((s, f) => s + f.distance, 0) / frames.faces.length
+    const toRad = (mm: number) => Math.round((mm / 2 / (mmPerUnit * dist)) * 1e5) / 1e5
+    return {
+      magLimit: starMagLimit,
+      maxRadiusRad: toRad(starMaxMm),
+      minRadiusRad: toRad(starMinMm),
+    }
+  }, [sky, edgeLengthMm, frames, starMagLimit, starMinMm, starMaxMm])
+  const segments = useSegments(
+    sky ? (skyFlip ? 'sky-mirrored' : 'sky') : resolution,
+    graticuleDeg,
+    stars,
+  )
 
   const [shared] = useState(() => new SharedUniforms())
 

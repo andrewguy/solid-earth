@@ -22,6 +22,8 @@ const LAYERS: readonly { colour: string; name: string; use: string }[] = [
   { colour: '#0000FF', name: 'Engraved fills', use: 'land, lakes, ocean' },
   { colour: '#00E000', name: 'Score', use: 'graticule' },
   { colour: '#D0D000', name: 'Sanding guide', use: 'bevel joints only' },
+  { colour: '#00E0E0', name: 'Stars', use: 'night sky, fill or rings' },
+  { colour: '#FF8000', name: 'Star holes', use: 'night sky lamp; cut before the outline' },
 ]
 
 function HelpSection({ title, children }: { title: string; children: ReactNode }) {
@@ -75,8 +77,9 @@ export function AboutDialog() {
                 edge length. Shapes with more faces distort the map less.
               </li>
               <li>
-                <strong>Map:</strong> pick the level of detail and which layers to draw: coastlines,
-                borders, rivers, lakes, fills and the graticule, each with its own LightBurn colour.
+                <strong>Map:</strong> choose the Earth or the night sky, then which layers to draw:
+                coastlines, borders, fills and the graticule, or stars, constellations and the Milky
+                Way, each with its own LightBurn colour.
               </li>
               <li>
                 <strong>Panels:</strong> enter your material thickness, optional kerf compensation,
@@ -131,7 +134,8 @@ export function AboutDialog() {
           </HelpSection>
 
           <p className="text-xs text-muted-foreground">
-            Map data from Natural Earth (public domain). Code under the MIT licence.
+            Map data from Natural Earth (public domain). Sky data from d3-celestial (BSD). Code
+            under the MIT licence.
           </p>
         </div>
 

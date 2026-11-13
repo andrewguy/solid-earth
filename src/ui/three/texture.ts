@@ -17,6 +17,8 @@ import type { PackedFace, PackedLayer } from '@/worker/projector'
 export const PANEL_COLOR = '#f3ece0'
 /** Fills are drawn translucent so the panel still reads as material, not paint. */
 const FILL_ALPHA = 0.45
+/** Star holes show as openings into the dark inside of the globe (plan §15). */
+export const HOLE_COLOR = '#1c1917'
 
 /** Face bounds in plane coordinates (model units), used for both UVs and canvas mapping. */
 export function faceBounds(face: FaceFrame) {
@@ -61,7 +63,7 @@ export function canvasSize(face: FaceFrame, pxPerUnit: number): [number, number]
  * Draw one face's artwork into a canvas whose extent is the face's bounding box (plan §6.6:
  * the texture shows exactly what gets exported). Canvas y is down; plane y is up.
  * UVs are (x − minX)/width, (y − minY)/height, which matches with CanvasTexture's flipY.
- * Order matches the SVG: fills, then lines.
+ * Order matches the SVG: fills, then lines, then star holes (drawn as openings).
  */
 export function drawFaceTexture(
   ctx: CanvasRenderingContext2D,
@@ -125,6 +127,11 @@ export function drawFaceTexture(
     if (strokes(style)) stroke(FILL_SHORES[id], style)
   }
   for (const id of LINE_LAYERS) if (styles[id].enabled) stroke(id, styles[id])
+  if (styles.starHoles.enabled && packed.holes) {
+    trace(packed.holes, true)
+    ctx.fillStyle = HOLE_COLOR
+    ctx.fill('nonzero')
+  }
 }
 
 /**

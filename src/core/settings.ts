@@ -1,5 +1,5 @@
 import type { FingerTip, JointOptions } from './joints'
-import { DEFAULT_LAYER_STYLES, type LayerId, type LayerStyle } from './layers'
+import { DEFAULT_LAYER_STYLES, type LayerId, type LayerStyle, type Subject } from './layers'
 import { DEFAULT_NEST_SETTINGS, type NestLayout, type NestSettings } from './nest/types'
 import { preset } from './polyhedron/presets'
 import type { PolyhedronDef } from './polyhedron/types'
@@ -39,6 +39,21 @@ export interface ProjectSettings {
   readonly fingerClearanceMm: number
   /** Bevel mode: how far the cut line sits outside the engraved sanding guide (plan §14). */
   readonly bevelAllowanceMm: number
+  /** What the panels show: the Earth, or the night sky (plan §15). */
+  readonly subject: Subject
+  /** Sky: mirror to the sky as seen from Earth (false = a traditional celestial globe). */
+  readonly skyFlip: boolean
+  /** Sky: faintest star shown (magnitude, 3–6). */
+  readonly starMagLimit: number
+  /** Sky: diameter of the faintest shown star, and of magnitude 0 and brighter, in mm. */
+  readonly starMinDiameterMm: number
+  readonly starMaxDiameterMm: number
+  /** Sky: stars at or brighter than this magnitude are cut as holes (when the layer is on). */
+  readonly starHoleMagLimit: number
+  /** Sky: smallest hole cut, in mm. */
+  readonly starHoleMinDiameterMm: number
+  /** Sky: RA/Dec grid spacing in degrees (15° = 1 h). */
+  readonly skyGridIntervalDeg: number
   /** Sheet nesting (plan §13). */
   readonly nest: NestSettings
   /** The last nesting result, or null; stale when `nestInputKey` no longer matches. */
@@ -71,6 +86,15 @@ export function jointOptions(
   }
 }
 
+/** Star limits offered (plan §15.2); the bundled data goes to magnitude 6. */
+export const STAR_MAG_MIN = 3
+export const STAR_MAG_MAX = 6
+export const isStarMagLimit = (m: number) => m >= STAR_MAG_MIN && m <= STAR_MAG_MAX
+/** Valid star and hole diameters in mm. */
+export const isStarDiameter = (mm: number) => mm > 0 && mm <= 20
+/** Valid hole limits: from brighter than any star to the faintest bundled. */
+export const isStarHoleMagLimit = (m: number) => m >= -2 && m <= STAR_MAG_MAX
+
 /** Valid sanding allowances in mm (plan §14.2). */
 export const isBevelAllowance = (mm: number) => mm >= 0 && mm < 5
 
@@ -93,6 +117,14 @@ export const DEFAULT_SETTINGS: ProjectSettings = {
   fingerTip: 'fill',
   fingerClearanceMm: 0.1,
   bevelAllowanceMm: 2,
+  subject: 'earth',
+  skyFlip: false,
+  starMagLimit: 5,
+  starMinDiameterMm: 0.6,
+  starMaxDiameterMm: 3,
+  starHoleMagLimit: 2.5,
+  starHoleMinDiameterMm: 1,
+  skyGridIntervalDeg: 15,
   nest: DEFAULT_NEST_SETTINGS,
   nestLayout: null,
 }

@@ -45,6 +45,7 @@ A client-side web app that takes vector world-map data (countries, coastlines, r
 9. Rotation presets and optimiser (e.g. vertex at north pole, minimise land cut by edges).
 10. Text labels (needs font-to-path conversion).
 11. Optional alternative per-face projection (e.g. azimuthal equidistant), with a warning that edge continuity breaks.
+12. Star chart (celestial globe), with optional cut-out stars for a lamp. **Scoped 2026-11-13; see §15.**
 
 ---
 
@@ -884,3 +885,171 @@ allowance, showing bevels in the 3D preview.
 - Whether the 2 mm default suits 3 mm ply and acrylic, or is more sanding than needed.
 - Whether the guide shows well enough on the 3D preview texture's edge to be worth drawing
   there (currently not drawn).
+
+---
+
+## 15. Star chart (scoped and implemented 2026-11-13)
+
+A second **subject**: instead of the Earth, project the night sky onto the solid to make a
+celestial globe. Bright stars can be cut right through the panels, so a light inside throws the
+sky onto the walls of a room.
+
+Panels, joints, kerf, nesting and export work exactly as for the Earth. Only the data and the
+layers change.
+
+### 15.1 How it works
+
+- **Same projection.** The sky data is lon/lat GeoJSON with longitude = right ascension in
+  degrees and latitude = declination, so it goes through the existing pipeline (rotate, clip to
+  each panel's cone, gnomonic projection) unchanged. Lines and the Milky Way are continuous
+  across edges just like coastlines.
+- **Which way round.** Panels are seen from outside, so the default gives a **traditional
+  celestial globe**: right ascension increases to the right with north up, which is the sky
+  mirrored compared with looking up. **As seen from Earth** mirrors the data at load
+  (longitude → −longitude), which keeps continuity exact.
+- **Lamp projection.** Gnomonic projection keeps every point on its ray from the centre, so a
+  light at the centre throws each star hole along its true direction. In the traditional mode,
+  the pattern on the walls is the real sky the right way round for someone inside the room.
+- **Stars are points.** Each panel draws a star as a circle centred where the star projects onto
+  that panel's plane, with a diameter in mm set by brightness. A star near an edge is drawn on
+  both panels and clipped to each panel's outline, so the two parts meet at the seam
+  (approximately in butt mode, where the inset and V-groove separate them a little).
+
+### 15.2 Decisions
+
+| Topic | Decision |
+|---|---|
+| Subject switch | **Earth / Sky** picker at the top of the **Map** tab. The layer list below changes with it. Each subject keeps its own layer settings, so switching back loses nothing. Saved in the project file. |
+| Handedness | **Traditional** (default) or **As seen from Earth**, a switch under the subject picker. |
+| Star data | d3-celestial `stars.6.json` (XHIP, J2000): 5,044 stars to magnitude 6. |
+| Star limit | **Magnitude slider**, 3 to 6 in steps of 0.1, **default 5** (1,627 stars; 519 at 4, 5,044 at 6). Replaces *Map data* resolution in sky mode. |
+| Star size | **Min and max diameter in mm**, defaults 0.6 mm and 3 mm. Linear in magnitude: magnitude 0 or brighter gets the max, the limit magnitude gets the min. |
+| Engraved stars | **Stars** layer with a mode like land: **Fill** (solid dots, default), **Ring** (circle outlines), **Fill + ring**. |
+| Cut-out stars | **Star holes** layer, off by default. Stars at or brighter than the **hole limit** (default magnitude 2.5, 93 stars) are cut through. Fainter stars stay engraved. A hole is never smaller than the **minimum hole** (default 1 mm). A star cut as a hole is not also engraved. |
+| Holes near edges | **Allowed to notch the outline.** A hole wholly inside the panel goes on the Star holes layer. A hole that crosses the cut outline is subtracted from the outline instead, so the cut layer carries the notch (both panels get their part). Holes may remove part of a finger. |
+| Hole cut order | Star holes get their own layer, LightBurn **05 (`#FF8000`)**, written before the cut so LightBurn can cut them first. |
+| Other layers | **Constellation lines** (stick figures, line layer), **Milky Way** (outermost outline only, fill layer with Fill / Outline / both), **Celestial grid** (RA/Dec, the sky's graticule, own spacing setting, default 15° = 1 h), **Ecliptic & equator** (two great circles, line layer). |
+| Not included | Constellation boundaries (not requested), labels and names (need text-to-path; later, with the text-labels backlog item), deep-sky objects, planets, star colours. |
+| Rotation | One globe rotation per project, shared by both subjects. North celestial pole at the top by default (identity). The readout shows **RA** (hours, 0–24 h), **Dec** and roll in sky mode. |
+| Shared with Earth | Shape, size, thickness, kerf, joints (including sanding guide), sheets, nesting, export file names, warnings. |
+
+### 15.3 Data and licensing
+
+d3-celestial 0.7.35 (npm, BSD-3-Clause) provides `stars.6.json`, `constellations.lines.json` and
+`mw.json`. Its sources: stars from XHIP (Anderson & Francis 2012, VizieR V/137D), constellation
+lines from the IAU with the author's changes, and the Milky Way from Jose R. Vieira's Milky Way
+Outline Catalog.
+
+- **Milky Way licence (decided 2026-11-13):** the original catalogue's site can no longer be
+  found, so the outline is taken as covered by d3-celestial's BSD-3-Clause licence, under which
+  it is distributed. Vieira's catalogue is credited in the README and the maker guide; the About
+  dialog credits d3-celestial.
+- `mw.json` has five nested levels (`ol1`–`ol5`). Keep only the outermost, identified by
+  containment rather than assumed from its id.
+- `scripts/build-data.ts` copies the pinned package's files into `src/data/` in a compact form:
+  stars as `[lon, lat, mag]` triples, constellation lines as a MultiLineString list, and the
+  Milky Way outline as rings. README licences and the About dialog credits are updated.
+
+### 15.4 Out of scope for the first version
+
+Constellation boundaries, labels, deep-sky objects and planets, star colours, a dark-sky preview
+theme, per-subject rotations, a warning for holes too close together (overlapping holes simply
+merge).
+
+### 15.5 Implementation steps
+
+1. **Data** (`scripts/build-data.ts`, `src/data/`, `src/worker/bundled-data.ts`). Add the pinned
+   d3-celestial dev dependency and the conversion described in §15.3, with the licence check
+   first. Load the sky data lazily in the worker, only when the subject is Sky. Tests: star
+   count and magnitude range, every line and ring inside lon/lat bounds, one Milky Way polygon.
+2. **Settings** (`src/core/settings.ts`, `src/core/layers.ts`). `ProjectSettings` gains
+   `subject: 'earth' | 'sky'`, `skyFlip`, `starMagLimit`, `starMinDiameterMm`,
+   `starMaxDiameterMm`, `starHoleMagLimit`, `starHoleMinDiameterMm` and `skyGridIntervalDeg`.
+   New layer ids `stars`, `starHoles`, `constellations`, `milkyWay`, `skyGrid`, `ecliptic`, with
+   defaults, and an `EARTH_LAYERS` / `SKY_LAYERS` split for the table and export. `cut` and
+   `guide` belong to both. Persistence is additive, so the schema stays at 1 and old files open
+   as Earth.
+3. **Sky linework** (`src/core/geo/sky.ts`). Ecliptic and equator as densified great circles
+   (obliquity 23.44°, J2000). The RA/Dec grid reuses `graticuleLines`. The flip is a mirror
+   applied while preparing data. Tests: the ecliptic crosses the equator at RA 0 h and 12 h and
+   peaks at Dec ±23.44°; flipping is its own inverse and keeps the pole fixed.
+4. **Stars in the pipeline** (`src/core/pipeline.ts`, new `src/core/stars.ts`). `PreparedMap`
+   gains points (unit vector and magnitude). Per face: keep stars in front of the face within its
+   cap widened by the largest star radius, project each one, and build a circle polygon (segment
+   count scaled to its size). Split by the hole limit. Engraved stars: fill polygons and ring
+   polylines clipped in 2D to the panel outline. Holes: those wholly inside the outline become
+   `FaceArtwork.holes`; the rest are subtracted from the outline before kerf. Kerf offsets holes
+   inward and the outline outward. Tests: star diameter formula and clamping; a star exactly on
+   an edge appears on both panels and the parts meet at the true edge (thickness 0); holes are
+   never below the minimum; a crossing hole notches the cut outline and is absent from `holes`;
+   kerf shrinks holes by kerf/2; nothing is engraved where a hole is cut; Earth output is
+   byte-identical to before.
+5. **SVG and texture** (`src/core/export/svg.ts`, `src/ui/three/texture.ts`). Write the sky
+   layers, with Star holes before the cut. Draw the sky layers on the 3D preview texture, and
+   show holes as see-through (or dark) so a lamp build can be previewed. Tests: layer order and
+   colours; a notched outline is still one closed path; sheet SVGs carry holes.
+6. **Nesting** (`src/core/nest/key.ts`). Parts already use the convex hull of the cut outline.
+   Notches only remove material, so a layout stays valid and the key needn't include sky
+   settings. Add a test that a notched panel's hull fits inside the un-notched one.
+7. **Worker and store** (`src/worker/projector.ts`, `src/ui/store.ts`,
+   `src/ui/useProjectionSync.ts`). Pass the subject, sky settings and star layers through, and
+   rerun the projection when any of them change.
+8. **UI.**
+   - **Map tab:** an Earth / Sky picker at the top. In sky mode, the Traditional / As seen from
+     Earth switch, the magnitude slider (showing the star count), min/max star size, and the
+     layer table with sky rows. The Star holes row has the hole limit and minimum hole size in its
+     settings popover.
+   - **Rotation readout:** RA (h), Dec and roll in sky mode.
+   - **About dialog:** mention the sky option and the Star holes layer (05).
+9. **Docs.** A maker-guide section, "Star chart and lamp", covering handedness, hole sizes, cut
+   order (Star holes before Cut), lamp tips (LED only, heat, light leaking at seams), and why
+   holes may notch edges. README features, layer table and credits.
+
+### 15.6 Implementation notes
+
+- **Milky Way licence.** The catalogue's page (skymap.com) returns 404 and no other copy of its
+  terms could be found, so the outline is taken as covered by d3-celestial's BSD-3-Clause
+  licence (§15.3). If that ever proves wrong, drop `milkyWay` and `milkyWayEdges` from `sky.json`
+  and the layer.
+- **Milky Way geometry (fixed after first review).** Two problems made the fill land beside the
+  band instead of in it:
+  1. One of the band's two edge rings runs the opposite way to the rest. The source relies on an
+     even-odd rule (which `geoContains` uses, so containment looked right), but our fills and
+     d3's `geoArea` follow ring direction. The build now orients every ring by containment
+     (`orientByContainment`) and checks the band's area (≈ 2.12 sr).
+  2. The spherical Sutherland–Hodgman clipper joins a ring's exit and entry points along the
+     shorter arc, which assumes rings well within a hemisphere. The band's edges wrap right round
+     the sky, so a cone plane cuts them at nearly opposite points and the join can go either way.
+     The build now cuts the band into 32 tiles on a 30° grid (d3's equirectangular projection does
+     the antimeridian cut, Clipper the tiling) for filling. The 2D union per panel merges them
+     back, and the outline stroke keeps the original rings (`milkyWayEdges`), since line clipping
+     has no such limit. A test checks the fill against containment point by point, both ways
+     round. `sky.json` grew to 476 KB with the tiles.
+- **Layers.** Sky line layers (`skyGrid`, `ecliptic`, `constellations`) and fill layers
+  (`milkyWay`, `stars`) join the existing line and fill lists, so SVG export and the preview
+  texture handle them unchanged. Stars use the fill-layer modes (Fill / stroke / both shown as
+  Dots / Rings / Dots + rings), stroking the `starRings` line source. `subjectStyles` switches
+  off the other subject's layers in the worker and the 3D view.
+- **Constellation lines** are not densified: each segment is a great-circle arc, which gnomonic
+  projection maps to a straight line, so the vertices alone are exact. The ecliptic and equator
+  are generated as 30° arcs so face culling still works.
+- **Stars per panel** are projected as points and drawn as 2D circles (12–72 segments). Holes
+  are merged where they overlap, then sorted by Clipper: wholly inside → `FaceArtwork.holes`
+  (shrunk by kerf/2), crossing → subtracted from the outline, outside → dropped. Fills (stars
+  and Milky Way) and star rings are clipped away from every hole; other linework isn't, since the
+  hole cut removes it anyway.
+- **Live preview.** Textures are hidden while dragging, so `lineSegments` also returns small
+  circles round each star (`starMarkers`), sized from the star diameters, for the GPU preview.
+- **Star counts.** The projector reports stars shown and holes cut, and the Map tab displays
+  them under the magnitude slider (data-driven, not a table).
+- **Earth unchanged.** Earth SVG output was checked byte-identical before and after (three
+  shapes, butt, finger and bevel joints, kerf on and off, with coastlines, land, ocean and
+  graticule).
+- **Speed.** Sky projection takes 0.2–0.5 s for the icosahedron, truncated icosahedron and
+  disdyakis triacontahedron, at magnitudes 5 and 6 with holes and the Milky Way on.
+
+### 15.7 Open points to confirm on real cuts
+
+- The default star sizes and the 1 mm minimum hole on 3 mm ply.
+- Whether light through 3 mm material near panel corners (where rays meet the panel at a
+  slant) still projects clean dots, or whether holes there need enlarging.

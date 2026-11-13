@@ -77,6 +77,12 @@ function layerPaths(
     const d = linesD(art.lines[id])
     if (style.enabled && d) out[id] = strokePath(d, style.color)
   }
+  if (styles.starHoles.enabled && art.holes && art.holes.length > 0) {
+    out.starHoles = strokePath(
+      art.holes.map((h) => pathData(h, true)).join(''),
+      styles.starHoles.color,
+    )
+  }
   if (styles.guide.enabled && art.guide) {
     out.guide = strokePath(pathData(art.guide, true), styles.guide.color)
   }
@@ -84,8 +90,17 @@ function layerPaths(
   return out
 }
 
-/** Output layers in engraving order: fills, then lines, the sanding guide, and the cut on top. */
-const LAYER_ORDER: readonly LayerId[] = [...FILL_LAYERS, ...LINE_LAYERS, 'guide', 'cut']
+/**
+ * Output layers in engraving order: fills, then lines, the sanding guide, star holes (cut before
+ * the outline, plan §15.2), and the cut on top.
+ */
+const LAYER_ORDER: readonly LayerId[] = [
+  ...FILL_LAYERS,
+  ...LINE_LAYERS,
+  'guide',
+  'starHoles',
+  'cut',
+]
 
 const layerGroup = (id: string, label: string, content: string) =>
   `  <g id="layer-${id}" inkscape:groupmode="layer" inkscape:label="${escapeXml(label)}">\n` +

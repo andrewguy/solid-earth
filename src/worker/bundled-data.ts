@@ -1,3 +1,4 @@
+import type { SkyData } from '@/core/geo/sky'
 import type { Resolution } from '@/core/settings'
 
 import type { MapSources } from './projector'
@@ -27,4 +28,10 @@ const loaders: Record<Resolution, () => Promise<Raw>> = {
 export async function loadBundledData(resolution: Resolution): Promise<MapSources> {
   const [land, countries, lakes, rivers] = await loaders[resolution]()
   return { land, countries, lakes, rivers } as MapSources
+}
+
+/** Load the bundled sky (plan §15.3), as its own chunk fetched only when the sky is first shown. */
+export async function loadSkyData(): Promise<SkyData> {
+  const m = (await import('@/data/sky.json')) as { default: unknown }
+  return m.default as SkyData
 }

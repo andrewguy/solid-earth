@@ -263,7 +263,41 @@ Sanding:
 Thickness doesn't move any line in bevel mode, but it sets the back-face width, and the app still
 warns if the material is too thick for the panel.
 
-## 12. Troubleshooting
+## 12. Star chart and lamp
+
+Set _Subject_ to **Night sky** on the _Map_ tab to put the stars on the solid instead of the
+Earth: a celestial globe. Everything else (shape, size, joints, sheets, export) works as usual.
+
+- **Which way round:** by default you get a **traditional celestial globe**. Seen from outside,
+  the sky is mirrored compared with looking up, as on historical globes. Turn on _As seen from
+  Earth_ for constellations that read the way they look in the night sky.
+- **Stars:** _Faintest star_ sets how many are shown. Magnitude 5 (the default) gives about
+  1,600 stars; 6, the naked-eye limit, about 5,000, which is slow to engrave and crowded on a
+  small globe. Brighter stars are drawn larger, between the two sizes you set.
+- **Layers:** Stars (dots, rings or both), Constellation lines, Milky Way, Ecliptic & equator,
+  and a Celestial grid of right ascension and declination. There are no names or labels yet.
+- **The rotation readout** shows right ascension (in hours) and declination of the point at the
+  top of the solid.
+
+### Making a lamp
+
+Turn on the **Star holes** layer (05, orange) to cut the brightest stars right through the
+panels. With an LED inside, each hole throws its star onto the walls. In the traditional mode,
+the stars on the walls are the real sky, the right way round for someone in the room.
+
+- Stars at or brighter than _Cut stars to mag_ (in the Star holes colour menu, default 2.5,
+  about 90 stars) are cut; fainter ones stay engraved. Holes are never smaller than _Smallest
+  hole_ (default 1 mm): a laser struggles below about 0.8 mm, and thin webs between holes burn
+  through.
+- In LightBurn, run **Star holes before Cut**, so panels don't drop out before their holes are
+  cut.
+- A hole that lands on a panel edge notches both panels, so the two halves meet as one hole when
+  assembled. It can take part of a finger joint.
+- Use an LED: other bulbs get hot inside a closed wooden globe. Light also leaks through the
+  seams, especially the V-grooves of butt joints. Bevel or finger joints, or tape on the inside of
+  the seams, keep the projection crisp.
+
+## 13. Troubleshooting
 
 - **Panels the wrong size in LightBurn:** check that the import didn't apply a DPI scale. The SVGs
   are in mm (`width="…mm"`).
@@ -282,3 +316,7 @@ warns if the material is too thick for the panel.
 
 Map data is from [Natural Earth](https://www.naturalearthdata.com/) (public domain). Borders
 follow Natural Earth's default point of view.
+
+Sky data comes from [d3-celestial](https://github.com/ofrohn/d3-celestial) (BSD licence): stars
+from the XHIP Hipparcos compilation, constellation lines after the IAU, and the Milky Way outline
+from Jose R. Vieira's Milky Way Outline Catalog. Positions are for epoch J2000.

@@ -1,7 +1,10 @@
 import { type Cap, boundingCap, capsOverlap, faceCap, polygonCap } from './clip/cull'
+import type { Paths64 } from 'clipper2-ts'
+
 import { clipRingToCone } from './clip/polygon'
 import { clipPolylineToCone } from './clip/polyline'
 import type { SphereRings } from './geo/lines'
+import type { PreparedStar } from './geo/sky'
 import type { FillLayerId, LineSourceId } from './layers'
 import { BUTT, type JointOptions, fingerReach, fingerSafeInterior } from './joints'
 import { polygonConePlanes } from './panel'
@@ -20,6 +23,15 @@ import { type FaceFrame, type PolyhedronFrames, planePoint } from './polyhedron/
 import { gnomonic } from './project/gnomonic'
 import { northUpRotation } from './project/orientation'
 import { IDENTITY, type Quat, rotate } from './quat'
+import {
+  type StarOptions,
+  circleRing,
+  isHole,
+  largestStarMm,
+  mainRing,
+  sortHoles,
+  starSizeMm,
+} from './stars'
 import { type Vec2, type Vec3, distance } from './vec3'
 
 /** A unit-vector polyline with its bounding cap, for culling. */
@@ -35,12 +47,14 @@ export interface PreparedPolygon {
 }
 
 /** Source polygons; ocean is derived per face (plan §4.2). */
-export type PolygonSourceId = 'land' | 'lakes'
+export type PolygonSourceId = 'land' | 'lakes' | 'milkyWay'
 
 /** Map data prepared once per dataset (plan §4.2). */
 export interface PreparedMap {
   readonly lines: Partial<Record<LineSourceId, readonly PreparedLine[]>>
   readonly polygons: Partial<Record<PolygonSourceId, readonly PreparedPolygon[]>>
+  /** Stars, for the sky (plan §15). */
+  readonly stars?: readonly PreparedStar[]
 }
 
 /**
@@ -63,6 +77,12 @@ export interface FaceArtwork {
   readonly outline: readonly Vec2[]
   /** Path to cut: the outline offset outward by kerf/2, or the outline itself (plan §3 Kerf). */
   readonly cutOutline: readonly Vec2[]
+  /**
+   * Star holes wholly inside the panel, as cut paths (shrunk by kerf/2 when kerf is on), on the
+   * Star holes layer (plan §15.2). Holes crossing the outline are notches in it instead. Present
+   * only when holes were requested.
+   */
+  readonly holes?: readonly (readonly Vec2[])[]
   /** Bevel mode only: the engraved sanding guide at the true face edge (plan §14.1). */
   readonly guide?: readonly Vec2[]
   /** Projected linework per source. */
@@ -92,12 +112,15 @@ export interface ArtworkOptions {
   readonly thicknessMm?: number
   /** Joint style (plan §12, §14). Default: square-cut butt joints. */
   readonly joint?: JointOptions
+  /** How to draw the map's stars, if it has any (plan §15). */
+  readonly stars?: StarOptions
 }
 
 /** Bundle linework and polygons with bounding caps. */
 export function prepareMap(
   lines: Partial<Record<LineSourceId, readonly Vec3[][]>>,
   polygons: Partial<Record<PolygonSourceId, readonly SphereRings[]>> = {},
+  stars?: readonly PreparedStar[],
 ): PreparedMap {
   const outLines: Partial<Record<LineSourceId, PreparedLine[]>> = {}
   for (const [id, ls] of Object.entries(lines) as [LineSourceId, Vec3[][]][]) {
@@ -107,7 +130,7 @@ export function prepareMap(
   for (const [id, ps] of Object.entries(polygons) as [PolygonSourceId, SphereRings[]][]) {
     outPolys[id] = ps.map((rings) => ({ rings, cap: boundingCap(rings.flat()) }))
   }
-  return { lines: outLines, polygons: outPolys }
+  return { lines: outLines, polygons: outPolys, ...(stars && { stars }) }
 }
 
 /** Longest edge of the solid in model units (plan §3: longest edge = N mm). */
@@ -134,7 +157,8 @@ export function rotateMap(map: PreparedMap, q: Quat): PreparedMap {
       cap: rotCap(cap),
     }))
   }
-  return { lines, polygons }
+  const stars = map.stars?.map(({ dir, mag }) => ({ dir: rotate(q, dir), mag }))
+  return { lines, polygons, ...(stars && { stars }) }
 }
 
 /** Face-frame (model units) → output mm: scale, then the panel's export rotation. */
@@ -199,6 +223,7 @@ export function buildFaceArtwork(
     kerfMm = 0,
     thicknessMm = 0,
     joint = BUTT,
+    stars: starOptions,
   }: ArtworkOptions,
 ): FaceArtwork {
   const face = frames.faces[faceIndex]
@@ -248,6 +273,44 @@ export function buildFaceArtwork(
     ? fingerSafeInterior(frames, faceIndex, fingers)?.map((p) => toOutput(t, p))
     : null
 
+  // Stars (plan §15.1): circles centred where each star projects onto this panel's plane, clipped
+  // to the panel in 2D. Holes cut through; those crossing the outline notch it.
+  let panelRegion = region ?? toPaths64([outlineExact])
+  let notched: Vec2[] | null = null
+  let holes: Vec2[][] | undefined
+  let noEngrave: Paths64 = []
+  const dots: Vec2[][] = []
+  if (starOptions && map.stars) {
+    const reachMm = largestStarMm(starOptions) / 2
+    const xs = outlineExact.map((p) => p[0])
+    const ys = outlineExact.map((p) => p[1])
+    const [x0, x1] = [Math.min(...xs) - reachMm, Math.max(...xs) + reachMm]
+    const [y0, y1] = [Math.min(...ys) - reachMm, Math.max(...ys) + reachMm]
+    const circles: Vec2[][] = []
+    for (const { dir, mag } of map.stars) {
+      if (mag > starOptions.magLimit) continue
+      const xy = gnomonic(face, dir)
+      if (!xy) continue
+      const c = toOutput(t, xy)
+      if (c[0] < x0 || c[0] > x1 || c[1] < y0 || c[1] > y1) continue
+      ;(isHole(mag, starOptions) ? circles : dots).push(circleRing(c, starSizeMm(mag, starOptions)))
+    }
+    if (starOptions.holes) {
+      const sorted = sortHoles(circles, panelRegion)
+      if (sorted.panel !== panelRegion) {
+        panelRegion = sorted.panel
+        notched = mainRing(panelRegion, outlineExact[0]!)
+      }
+      noEngrave = sorted.all
+      holes = sorted.inside.map((h) => {
+        const cut = kerfMm > 0 ? offsetPolygon(h, -kerfMm / 2) : h
+        return finish(cut)
+      })
+    }
+  }
+  /** The panel minus every hole: where engraving can go. */
+  const engraveRegion = noEngrave.length > 0 ? subtract(panelRegion, noEngrave) : panelRegion
+
   const lines: Partial<Record<LineSourceId, Vec2[][]>> = {}
   for (const [id, ls] of Object.entries(map.lines) as [LineSourceId, PreparedLine[]][]) {
     const polylines: Vec2[][] = []
@@ -262,6 +325,12 @@ export function buildFaceArtwork(
     }
     if (region) polylines.push(...clipPolylines(toClip, region))
     lines[id] = polylines.map(finish).filter((pts) => pts.length >= 2)
+  }
+  if (dots.length > 0) {
+    const rings = dots.map((d) => [...d, d[0]!])
+    lines.starRings = clipPolylines(rings, engraveRegion)
+      .map(finish)
+      .filter((pts) => pts.length >= 2)
   }
 
   const fills: Partial<Record<FillLayerId, Vec2[][]>> = {}
@@ -279,14 +348,26 @@ export function buildFaceArtwork(
       fills.ocean = fromPaths64(subtract(region ?? toPaths64([outlineExact]), land), precisionMm)
     }
   }
+  if (want.milkyWay) {
+    const milkyWay = projectPolygons(t, cap, planes, map.polygons.milkyWay ?? [])
+    fills.milkyWay = fromPaths64(intersection(milkyWay, engraveRegion), precisionMm)
+  }
+  if (want.stars && dots.length > 0) {
+    fills.stars = fromPaths64(
+      intersection(unionPositive(toPaths64(dots)), engraveRegion),
+      precisionMm,
+    )
+  }
 
-  const outline = finish(outlineExact)
-  const cutOutline = kerfMm > 0 ? finish(offsetPolygon(outlineExact, kerfMm / 2)) : outline
+  const outlineCut = notched ?? outlineExact
+  const outline = finish(outlineCut)
+  const cutOutline = kerfMm > 0 ? finish(offsetPolygon(outlineCut, kerfMm / 2)) : outline
   return {
     faceIndex,
     rotation,
     outline,
     cutOutline,
+    ...(holes && { holes }),
     ...(guide && { guide: finish(guide.map((p) => toOutput(t, p))) }),
     lines,
     fills,

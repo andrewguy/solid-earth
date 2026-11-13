@@ -2,6 +2,7 @@ import { Canvas, useThree } from '@react-three/fiber'
 import { useEffect, useMemo } from 'react'
 import { BufferGeometry, Float32BufferAttribute } from 'three'
 
+import { subjectStyles } from '@/core/layers'
 import { type PolyhedronFrames, buildFrames } from '@/core/polyhedron/faces'
 import { length } from '@/core/vec3'
 import { MAX_LIVE_FACES } from '@/ui/constants'
@@ -52,7 +53,10 @@ function FitCamera({ radius }: { radius: number }) {
 function Solid() {
   const polyhedron = useAppStore((s) => s.polyhedron)
   const artwork = useAppStore((s) => s.artwork)
-  const styles = useAppStore((s) => s.layerStyles)
+  const layerStyles = useAppStore((s) => s.layerStyles)
+  const subject = useAppStore((s) => s.subject)
+  // Only the current subject's layers are drawn (plan §15).
+  const styles = useMemo(() => subjectStyles(layerStyles, subject), [layerStyles, subject])
   // Textures are stale while dragging, or until the worker catches up with the rotation.
   // (A boolean selector, so this component doesn't re-render on every pointer move.)
   const texturesStale = useAppStore(

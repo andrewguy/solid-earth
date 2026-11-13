@@ -3,6 +3,7 @@ import { useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
 import { rotationReadout } from '@/core/geo/rotation'
+import { SUBJECTS, type Subject } from '@/core/layers'
 import { type FingerTip, fingerProfile } from '@/core/joints'
 import { bevelTiltDeg, dihedralGroups } from '@/core/panel'
 import { buildFrames } from '@/core/polyhedron/faces'
@@ -17,7 +18,10 @@ import {
   type JointKind,
   RESOLUTIONS,
   type Resolution,
+  STAR_MAG_MAX,
+  STAR_MAG_MIN,
   isBevelAllowance,
+  isStarDiameter,
 } from '@/core/settings'
 
 import { Button } from '@/ui/components/ui/button'
@@ -34,6 +38,7 @@ import {
   SelectValue,
 } from '@/ui/components/ui/select'
 import { Separator } from '@/ui/components/ui/separator'
+import { Slider } from '@/ui/components/ui/slider'
 import { Switch } from '@/ui/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/ui/components/ui/tabs'
 import { LayerTable } from '@/ui/layout/LayerTable'
@@ -260,25 +265,36 @@ function JointSettings() {
 function RotationReadout() {
   const rotation = useAppStore((s) => s.rotation)
   const resetRotation = useAppStore((s) => s.resetRotation)
+  const sky = useAppStore((s) => s.subject === 'sky')
+  const skyFlip = useAppStore((s) => s.skyFlip)
   const r = rotationReadout(rotation)
-  const cells = [
-    ['Lon', r.lon],
-    ['Lat', r.lat],
-    ['Roll', r.roll],
-  ] as const
+  const deg = (v: number) => `${v.toFixed(1)}°`
+  // Sky (plan §15.2): longitude is right ascension (negated when mirrored), shown in hours.
+  const raHours = ((((skyFlip ? -r.lon : r.lon) % 360) + 360) % 360) / 15
+  const cells: readonly (readonly [string, string])[] = sky
+    ? [
+        ['RA', `${raHours.toFixed(2)} h`],
+        ['Dec', deg(r.lat)],
+        ['Roll', deg(r.roll)],
+      ]
+    : [
+        ['Lon', deg(r.lon)],
+        ['Lat', deg(r.lat)],
+        ['Roll', deg(r.roll)],
+      ]
   return (
     <>
       <dl className="grid grid-cols-3 gap-2 text-center text-xs">
         {cells.map(([k, v]) => (
           <div key={k} className="rounded-md border px-2 py-1.5">
             <dt className="text-muted-foreground">{k}</dt>
-            <dd className="font-mono">{v.toFixed(1)}°</dd>
+            <dd className="font-mono">{v}</dd>
           </div>
         ))}
       </dl>
       <p className="text-xs text-muted-foreground">
-        The geographic point at the top of the solid, and the spin about it. Drag the globe in the
-        3D view to change.
+        {sky ? 'The point in the sky' : 'The geographic point'} at the top of the solid, and the
+        spin about it. Drag the globe in the 3D view to change.
       </p>
       <Button variant="outline" size="sm" className="w-full" onClick={resetRotation}>
         <RotateCcw /> Reset rotation
@@ -366,6 +382,7 @@ function ShapePicker() {
 }
 
 const isResolution = (v: string): v is Resolution => (RESOLUTIONS as readonly string[]).includes(v)
+const isSubject = (v: string): v is Subject => (SUBJECTS as readonly string[]).includes(v)
 
 type LeftTab = 'shape' | 'map' | 'panels' | 'sheets'
 
@@ -411,28 +428,120 @@ function ShapeTab() {
   )
 }
 
-/** Map data and what gets drawn. */
+/** Faintest star, star sizes, and how many stars that shows (plan §15.2). */
+function StarSettings() {
+  const magLimit = useAppStore((s) => s.starMagLimit)
+  const setMagLimit = useAppStore((s) => s.setStarMagLimit)
+  const minMm = useAppStore((s) => s.starMinDiameterMm)
+  const maxMm = useAppStore((s) => s.starMaxDiameterMm)
+  const setDiameters = useAppStore((s) => s.setStarDiametersMm)
+  const counts = useAppStore((s) => s.projection?.starCounts)
+  return (
+    <>
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <Label htmlFor="star-limit">Faintest star</Label>
+          <span className="font-mono text-xs">mag {magLimit.toFixed(1)}</span>
+        </div>
+        <Slider
+          id="star-limit"
+          min={STAR_MAG_MIN}
+          max={STAR_MAG_MAX}
+          step={0.1}
+          value={[magLimit]}
+          onValueChange={([v]) => v !== undefined && setMagLimit(Math.round(v * 10) / 10)}
+        />
+        <p className="text-xs text-muted-foreground">
+          {counts ? `${counts.shown.toLocaleString()} stars` : 'Stars'} down to magnitude{' '}
+          {magLimit.toFixed(1)}
+          {counts && counts.holes > 0 ? `, ${counts.holes} of them cut as holes` : ''}. Higher
+          magnitudes are fainter: about 6 is the naked-eye limit.
+        </p>
+      </div>
+      <NumberField
+        id="star-max"
+        label="Brightest star size"
+        unit="mm"
+        value={maxMm}
+        onCommit={(max) => setDiameters({ max })}
+        step={0.1}
+        accept={isStarDiameter}
+      />
+      <NumberField
+        id="star-min"
+        label="Faintest star size"
+        unit="mm"
+        value={minMm}
+        onCommit={(min) => setDiameters({ min })}
+        step={0.1}
+        accept={isStarDiameter}
+      />
+    </>
+  )
+}
+
+/** What the panels show (the Earth or the sky), its data, and its layers. */
 function MapTab() {
   const resolution = useAppStore((s) => s.resolution)
   const setResolution = useAppStore((s) => s.setResolution)
+  const subject = useAppStore((s) => s.subject)
+  const setSubject = useAppStore((s) => s.setSubject)
+  const skyFlip = useAppStore((s) => s.skyFlip)
+  const setSkyFlip = useAppStore((s) => s.setSkyFlip)
   return (
     <>
-      <Section title="Map data">
+      <Section title="Subject">
         <Select
-          value={resolution}
+          value={subject}
           onValueChange={(v) => {
-            if (isResolution(v)) setResolution(v)
+            if (isSubject(v)) setSubject(v)
           }}
         >
-          <SelectTrigger className="w-full" aria-label="Data resolution">
+          <SelectTrigger className="w-full" aria-label="Subject">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="110m">1:110m (coarse)</SelectItem>
-            <SelectItem value="50m">1:50m (medium)</SelectItem>
+            <SelectItem value="earth">Earth (world map)</SelectItem>
+            <SelectItem value="sky">Night sky (star chart)</SelectItem>
           </SelectContent>
         </Select>
+        {subject === 'sky' && (
+          <>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="sky-flip">As seen from Earth</Label>
+              <Switch id="sky-flip" checked={skyFlip} onCheckedChange={setSkyFlip} />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {skyFlip
+                ? 'Constellations read as they look in the night sky when you view the globe from outside.'
+                : 'A traditional celestial globe: seen from outside, the sky is mirrored. A light inside throws the stars onto the walls the right way round.'}
+            </p>
+          </>
+        )}
       </Section>
+
+      {subject === 'earth' ? (
+        <Section title="Map data">
+          <Select
+            value={resolution}
+            onValueChange={(v) => {
+              if (isResolution(v)) setResolution(v)
+            }}
+          >
+            <SelectTrigger className="w-full" aria-label="Data resolution">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="110m">1:110m (coarse)</SelectItem>
+              <SelectItem value="50m">1:50m (medium)</SelectItem>
+            </SelectContent>
+          </Select>
+        </Section>
+      ) : (
+        <Section title="Stars">
+          <StarSettings />
+        </Section>
+      )}
 
       <Section title="Layers">
         <LayerTable />

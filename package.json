@@ -53,6 +53,7 @@
     "@types/topojson-server": "^3.0.4",
     "@types/topojson-specification": "^1.0.5",
     "@vitejs/plugin-react": "^6.3.0",
+    "d3-celestial": "0.7.35",
     "eslint": "^10.14.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-react-hooks": "^7.1.1",

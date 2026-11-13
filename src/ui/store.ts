@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-import type { LayerId, LayerStyle } from '@/core/layers'
+import type { LayerId, LayerStyle, Subject } from '@/core/layers'
 import { type PresetId, isPresetId, preset } from '@/core/polyhedron/presets'
 import type { PolyhedronDef } from '@/core/polyhedron/types'
 import { IDENTITY, type Quat } from '@/core/quat'
@@ -13,8 +13,12 @@ import {
   type ProjectSettings,
   type Resolution,
   isBevelAllowance,
+  isStarDiameter,
+  isStarHoleMagLimit,
+  isStarMagLimit,
 } from '@/core/settings'
 import type { NestJob } from '@/ui/nester-client'
+import type { SkyRequest } from '@/worker/projector'
 import type { NestProgress } from '@/worker/nester'
 import type { PackedFace } from '@/worker/projector'
 
@@ -29,6 +33,8 @@ export interface Projection {
   readonly faces: readonly FaceOutput[]
   /** Rendered sheets of the current layout (plan §13); empty without one. */
   readonly sheets: readonly FaceOutput[]
+  /** Sky only: stars shown, and how many are cut as holes. */
+  readonly starCounts?: { readonly shown: number; readonly holes: number } | null
   readonly prepareMs: number
   readonly projectMs: number
 }
@@ -72,6 +78,14 @@ function fromSettings(s: ProjectSettings) {
     fingerTip: s.fingerTip,
     fingerClearanceMm: s.fingerClearanceMm,
     bevelAllowanceMm: s.bevelAllowanceMm,
+    subject: s.subject,
+    skyFlip: s.skyFlip,
+    starMagLimit: s.starMagLimit,
+    starMinDiameterMm: s.starMinDiameterMm,
+    starMaxDiameterMm: s.starMaxDiameterMm,
+    starHoleMagLimit: s.starHoleMagLimit,
+    starHoleMinDiameterMm: s.starHoleMinDiameterMm,
+    skyGridIntervalDeg: s.skyGridIntervalDeg,
     nest: s.nest,
     nestLayout: s.nestLayout,
   }
@@ -95,6 +109,14 @@ interface AppState {
   fingerTip: FingerTip
   fingerClearanceMm: number
   bevelAllowanceMm: number
+  subject: Subject
+  skyFlip: boolean
+  starMagLimit: number
+  starMinDiameterMm: number
+  starMaxDiameterMm: number
+  starHoleMagLimit: number
+  starHoleMinDiameterMm: number
+  skyGridIntervalDeg: number
   nest: NestSettings
   /** Saved with the project; may be stale (see `currentLayout`). */
   nestLayout: NestLayout | null
@@ -141,6 +163,12 @@ interface AppState {
   setFingerTip: (tip: FingerTip) => void
   setFingerClearanceMm: (mm: number) => void
   setBevelAllowanceMm: (mm: number) => void
+  setSubject: (subject: Subject) => void
+  setSkyFlip: (on: boolean) => void
+  setStarMagLimit: (mag: number) => void
+  setStarDiametersMm: (patch: { min?: number; max?: number; holeMin?: number }) => void
+  setStarHoleMagLimit: (mag: number) => void
+  setSkyGridIntervalDeg: (deg: number) => void
   setNest: (patch: Partial<NestSettings>) => void
   setNestLayout: (layout: NestLayout | null) => void
   setComputing: () => void
@@ -223,6 +251,24 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setBevelAllowanceMm: (mm) => {
     if (Number.isFinite(mm) && isBevelAllowance(mm)) set({ bevelAllowanceMm: mm })
   },
+  setSubject: (subject) => set({ subject }),
+  setSkyFlip: (skyFlip) => set({ skyFlip }),
+  setStarMagLimit: (mag) => {
+    if (Number.isFinite(mag) && isStarMagLimit(mag)) set({ starMagLimit: mag })
+  },
+  setStarDiametersMm: ({ min, max, holeMin }) => {
+    const ok = (mm: number | undefined): mm is number =>
+      mm !== undefined && Number.isFinite(mm) && isStarDiameter(mm)
+    set({
+      ...(ok(min) && { starMinDiameterMm: min }),
+      ...(ok(max) && { starMaxDiameterMm: max }),
+      ...(ok(holeMin) && { starHoleMinDiameterMm: holeMin }),
+    })
+  },
+  setStarHoleMagLimit: (mag) => {
+    if (Number.isFinite(mag) && isStarHoleMagLimit(mag)) set({ starHoleMagLimit: mag })
+  },
+  setSkyGridIntervalDeg: (skyGridIntervalDeg) => set({ skyGridIntervalDeg }),
   setNest: (patch) => set((s) => ({ nest: { ...s.nest, ...patch } })),
   setNestLayout: (nestLayout) => set({ nestLayout }),
   setComputing: () => set({ computing: true }),
@@ -257,6 +303,14 @@ export const selectSettings = (s: AppState): ProjectSettings => ({
   fingerTip: s.fingerTip,
   fingerClearanceMm: s.fingerClearanceMm,
   bevelAllowanceMm: s.bevelAllowanceMm,
+  subject: s.subject,
+  skyFlip: s.skyFlip,
+  starMagLimit: s.starMagLimit,
+  starMinDiameterMm: s.starMinDiameterMm,
+  starMaxDiameterMm: s.starMaxDiameterMm,
+  starHoleMagLimit: s.starHoleMagLimit,
+  starHoleMinDiameterMm: s.starHoleMinDiameterMm,
+  skyGridIntervalDeg: s.skyGridIntervalDeg,
   nest: s.nest,
   nestLayout: s.nestLayout,
 })
@@ -267,3 +321,29 @@ export const selectSettings = (s: AppState): ProjectSettings => ({
  */
 export const selectCurrentLayout = (s: AppState): NestLayout | null =>
   s.nestLayout && currentLayout(selectSettings(s))
+
+type SkyFields = Pick<
+  ProjectSettings,
+  | 'subject'
+  | 'skyFlip'
+  | 'skyGridIntervalDeg'
+  | 'starMagLimit'
+  | 'starMinDiameterMm'
+  | 'starMaxDiameterMm'
+  | 'starHoleMagLimit'
+  | 'starHoleMinDiameterMm'
+>
+
+/** The projector's sky request for these settings, or null when the subject is the Earth. */
+export function skyRequest(s: SkyFields): SkyRequest | null {
+  if (s.subject !== 'sky') return null
+  return {
+    flip: s.skyFlip,
+    gridIntervalDeg: s.skyGridIntervalDeg,
+    magLimit: s.starMagLimit,
+    minDiameterMm: s.starMinDiameterMm,
+    maxDiameterMm: s.starMaxDiameterMm,
+    holeMagLimit: s.starHoleMagLimit,
+    holeMinDiameterMm: s.starHoleMinDiameterMm,
+  }
+}

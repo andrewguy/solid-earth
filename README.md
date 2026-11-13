@@ -21,6 +21,10 @@ settings, kerf, and assembly.
 - **Map layers:** coastlines, country borders, rivers, lakes, land and ocean fills, graticule.
   Each layer has its own on/off switch, mode (fill, shore line or both) and LightBurn colour.
 - **Data:** Natural Earth at 1:110m and 1:50m, bundled with the app.
+- **Star chart:** switch the subject to the night sky for a celestial globe: stars sized by
+  brightness (dots or rings), constellation lines, the Milky Way, the ecliptic and equator, and an
+  RA/Dec grid, as a traditional globe or as seen from Earth. Bright stars can be cut right through
+  the panels so a light inside projects the sky onto the walls.
 - **3D preview:** drag to rotate the globe under the solid; panels are textured with exactly what
   gets exported.
 - **Laser-ready SVGs:** true mm scale, north-up panels, Inkscape layers, exact LightBurn palette
@@ -52,6 +56,8 @@ Everything runs in the browser. There is no server and nothing is uploaded.
 | Engraved fills (land, lakes, ocean)          | 01              | `#0000FF` |
 | Score (graticule)                            | 03              | `#00E000` |
 | Sanding guide (bevel joints only)            | 04              | `#D0D000` |
+| Star holes (night sky, cut)                  | 05              | `#FF8000` |
+| Stars (night sky)                            | 06              | `#00E0E0` |
 
 All colours can be changed per layer from LightBurn's palette. The optional sheet outline uses
 LightBurn's T1 tool layer (`#F36926`), which is never cut; see the maker guide before turning it
@@ -108,7 +114,11 @@ tests/        Vitest unit tests and fast-check property tests
 - `lakes-*.topo.json`, `rivers-*.topo.json`: Natural Earth GeoJSON at a pinned tag, downloaded
   (cached in `.cache/`), ring winding normalised to the d3 convention, and converted to TopoJSON.
 
-`npm run build:data -- --skip-natural-earth` rebuilds only the world-atlas files (no network).
+- `sky.json`: stars to magnitude 6, constellation lines and the outermost Milky Way outline from
+  the pinned [d3-celestial](https://github.com/ofrohn/d3-celestial) npm package, packed compactly.
+
+`npm run build:data -- --skip-natural-earth` rebuilds only the world-atlas and sky files (no
+network).
 
 Borders follow Natural Earth's default point of view; disputed areas are shown as Natural Earth
 draws them.
@@ -118,5 +128,8 @@ draws them.
 - Code: MIT (see [LICENSE](LICENSE)).
 - Map data: [Natural Earth](https://www.naturalearthdata.com/), public domain; packaged by
   world-atlas (ISC).
+- Sky data: [d3-celestial](https://github.com/ofrohn/d3-celestial) (BSD-3-Clause); stars from
+  XHIP (Anderson & Francis 2012), constellation lines after the IAU, Milky Way outline from Jose
+  R. Vieira's Milky Way Outline Catalog.
 - Libraries: d3 and topojson (ISC), three.js (MIT), Clipper2 TypeScript port (Boost Software
   License 1.0), and others listed in `package.json`.

@@ -45,28 +45,75 @@ export function lightBurnIndex(color: string): string | null {
   return i < 0 ? null : String(i).padStart(2, '0')
 }
 
-/** Map layers drawn as strokes from shared arcs. */
-export type LineLayerId = 'coastlines' | 'borders' | 'rivers' | 'graticule'
-/** Map layers that can be filled (and optionally stroked along their shorelines). */
-export type FillLayerId = 'land' | 'lakes' | 'ocean'
-/** `guide` is the sanding guide, output only for sanded bevel joints (plan §14). */
-export type LayerId = 'cut' | 'guide' | LineLayerId | FillLayerId
+/** Layers drawn as strokes: Earth linework, and the sky's lines (plan §15). */
+export type LineLayerId =
+  'coastlines' | 'borders' | 'rivers' | 'graticule' | 'skyGrid' | 'ecliptic' | 'constellations'
+/**
+ * Layers that can be filled and optionally stroked: Earth's land, lakes and ocean (stroked along
+ * their shorelines), the Milky Way (stroked along its outline) and stars (dots, or rings).
+ */
+export type FillLayerId = 'land' | 'lakes' | 'ocean' | 'milkyWay' | 'stars'
+/**
+ * `guide` is the sanding guide, output only for sanded bevel joints (plan §14). `starHoles` are
+ * stars cut right through the panel (plan §15).
+ */
+export type LayerId = 'cut' | 'guide' | 'starHoles' | LineLayerId | FillLayerId
 
 /**
  * Linework sources prepared from the data. Fill layers never stroke their clipped polygon
  * outlines (that would engrave along every cut, plan §5); "stroke" mode draws their shoreline
  * arcs instead.
  */
-export type LineSourceId = LineLayerId | 'lakeShores'
+export type LineSourceId = LineLayerId | 'lakeShores' | 'milkyWayEdge' | 'starRings'
 
-export const LINE_LAYERS: readonly LineLayerId[] = ['graticule', 'rivers', 'borders', 'coastlines']
-export const FILL_LAYERS: readonly FillLayerId[] = ['ocean', 'land', 'lakes']
+/** Engraving order within each kind: lower layers first. */
+export const LINE_LAYERS: readonly LineLayerId[] = [
+  'graticule',
+  'rivers',
+  'borders',
+  'coastlines',
+  'skyGrid',
+  'ecliptic',
+  'constellations',
+]
+export const FILL_LAYERS: readonly FillLayerId[] = ['ocean', 'land', 'lakes', 'milkyWay', 'stars']
 
-/** Shoreline linework a fill layer strokes in "stroke"/"both" mode. */
+/** Outline linework a fill layer strokes in "stroke"/"both" mode. */
 export const FILL_SHORES: Readonly<Record<FillLayerId, LineSourceId>> = {
   land: 'coastlines',
   ocean: 'coastlines',
   lakes: 'lakeShores',
+  milkyWay: 'milkyWayEdge',
+  stars: 'starRings',
+}
+
+/** What the panels show (plan §15). */
+export type Subject = 'earth' | 'sky'
+export const SUBJECTS: readonly Subject[] = ['earth', 'sky']
+
+/** Layers that belong to one subject; `cut` and `guide` belong to both. */
+export const SUBJECT_LAYERS: Readonly<Record<Subject, readonly LayerId[]>> = {
+  earth: ['coastlines', 'borders', 'rivers', 'lakes', 'land', 'ocean', 'graticule'],
+  sky: ['stars', 'starHoles', 'constellations', 'milkyWay', 'skyGrid', 'ecliptic'],
+}
+
+/** True if `id` is drawn for `subject`. */
+export const layerInSubject = (id: LayerId, subject: Subject) =>
+  id === 'cut' || id === 'guide' || SUBJECT_LAYERS[subject].includes(id)
+
+/**
+ * The styles with every layer of the other subject switched off, so nothing from it is computed
+ * or exported.
+ */
+export function subjectStyles(
+  styles: Readonly<Record<LayerId, LayerStyle>>,
+  subject: Subject,
+): Record<LayerId, LayerStyle> {
+  const out = { ...styles }
+  for (const id of Object.keys(out) as LayerId[]) {
+    if (!layerInSubject(id, subject) && out[id].enabled) out[id] = { ...out[id], enabled: false }
+  }
+  return out
 }
 
 export type LayerMode = 'stroke' | 'fill' | 'both'
@@ -82,7 +129,7 @@ export interface LayerStyle {
   readonly previewWidth: number
 }
 
-const [C00, C01, C02, C03, C04] = LIGHTBURN_PALETTE
+const [C00, C01, C02, C03, C04, C05, C06] = LIGHTBURN_PALETTE
 
 /** Defaults from plan §3. */
 export const DEFAULT_LAYER_STYLES: Readonly<Record<LayerId, LayerStyle>> = {
@@ -95,6 +142,24 @@ export const DEFAULT_LAYER_STYLES: Readonly<Record<LayerId, LayerStyle>> = {
   ocean: { label: 'Ocean', enabled: false, color: C01, mode: 'fill', previewWidth: 1 },
   graticule: { label: 'Graticule', enabled: false, color: C03, mode: 'stroke', previewWidth: 1 },
   guide: { label: 'Sanding guide', enabled: true, color: C04, mode: 'stroke', previewWidth: 1 },
+  stars: { label: 'Stars', enabled: true, color: C06, mode: 'fill', previewWidth: 1 },
+  starHoles: { label: 'Star holes', enabled: false, color: C05, mode: 'stroke', previewWidth: 1 },
+  constellations: {
+    label: 'Constellation lines',
+    enabled: true,
+    color: C00,
+    mode: 'stroke',
+    previewWidth: 1,
+  },
+  milkyWay: { label: 'Milky Way', enabled: false, color: C01, mode: 'fill', previewWidth: 1 },
+  skyGrid: { label: 'Celestial grid', enabled: false, color: C03, mode: 'stroke', previewWidth: 1 },
+  ecliptic: {
+    label: 'Ecliptic & equator',
+    enabled: false,
+    color: C03,
+    mode: 'stroke',
+    previewWidth: 1,
+  },
 }
 
 export const isFillLayer = (id: LayerId): id is FillLayerId =>
@@ -106,5 +171,11 @@ export const strokes = (style: LayerStyle) => style.mode === 'stroke' || style.m
 /** Which fills the pipeline must compute for these styles (ocean and land need land). */
 export function fillsNeeded(styles: Readonly<Record<LayerId, LayerStyle>>) {
   const on = (id: FillLayerId) => styles[id].enabled && fills(styles[id])
-  return { land: on('land'), lakes: on('lakes'), ocean: on('ocean') }
+  return {
+    land: on('land'),
+    lakes: on('lakes'),
+    ocean: on('ocean'),
+    milkyWay: on('milkyWay'),
+    stars: on('stars'),
+  }
 }

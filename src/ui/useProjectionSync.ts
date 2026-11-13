@@ -3,7 +3,7 @@ import { useEffect, useRef } from 'react'
 import { jointOptions } from '@/core/settings'
 import { MAX_LIVE_FACES } from '@/ui/constants'
 import { projector } from '@/ui/projector-client'
-import { selectCurrentLayout, useAppStore } from '@/ui/store'
+import { selectCurrentLayout, skyRequest, useAppStore } from '@/ui/store'
 
 const DEBOUNCE_MS = 120
 
@@ -33,6 +33,14 @@ export function useProjectionSync(): void {
   const fingerTip = useAppStore((s) => s.fingerTip)
   const fingerClearanceMm = useAppStore((s) => s.fingerClearanceMm)
   const bevelAllowanceMm = useAppStore((s) => s.bevelAllowanceMm)
+  const subject = useAppStore((s) => s.subject)
+  const skyFlip = useAppStore((s) => s.skyFlip)
+  const skyGridIntervalDeg = useAppStore((s) => s.skyGridIntervalDeg)
+  const starMagLimit = useAppStore((s) => s.starMagLimit)
+  const starMinDiameterMm = useAppStore((s) => s.starMinDiameterMm)
+  const starMaxDiameterMm = useAppStore((s) => s.starMaxDiameterMm)
+  const starHoleMagLimit = useAppStore((s) => s.starHoleMagLimit)
+  const starHoleMinDiameterMm = useAppStore((s) => s.starHoleMinDiameterMm)
   const dragging = useAppStore((s) => s.dragging)
   // Sheets are rendered only for a layout that is current (plan §13.4 step 9).
   const layout = useAppStore(selectCurrentLayout)
@@ -58,6 +66,16 @@ export function useProjectionSync(): void {
       fingerClearanceMm,
       bevelAllowanceMm,
     })
+    const sky = skyRequest({
+      subject,
+      skyFlip,
+      skyGridIntervalDeg,
+      starMagLimit,
+      starMinDiameterMm,
+      starMaxDiameterMm,
+      starHoleMagLimit,
+      starHoleMinDiameterMm,
+    })
     const { setComputing, setProjection, setArtwork, setError } = useAppStore.getState()
     setComputing()
     const timer = setTimeout(
@@ -73,6 +91,7 @@ export function useProjectionSync(): void {
             kerfMm,
             thicknessMm,
             joint,
+            sky,
             sheets: layout
               ? { layout, nest: useAppStore.getState().nest, outline: sheetOutline }
               : undefined,
@@ -84,6 +103,7 @@ export function useProjectionSync(): void {
               shape: r.shape,
               svgs: r.svgs ?? [],
               sheetSvgs: r.sheetSvgs,
+              starCounts: r.starCounts,
               prepareMs: r.prepareMs,
               projectMs: r.projectMs,
             })
@@ -109,6 +129,14 @@ export function useProjectionSync(): void {
     fingerTip,
     fingerClearanceMm,
     bevelAllowanceMm,
+    subject,
+    skyFlip,
+    skyGridIntervalDeg,
+    starMagLimit,
+    starMinDiameterMm,
+    starMaxDiameterMm,
+    starHoleMagLimit,
+    starHoleMinDiameterMm,
     dragging,
     layout,
     sheetOutline,
@@ -136,6 +164,7 @@ export function useProjectionSync(): void {
           graticuleIntervalDeg: s.graticuleIntervalDeg,
           thicknessMm: s.thicknessMm,
           joint: jointOptions(s),
+          sky: skyRequest(s),
           wantSvg: false,
         })
         .then((r) => {

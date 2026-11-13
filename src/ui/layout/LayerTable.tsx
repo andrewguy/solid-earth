@@ -4,10 +4,11 @@ import {
   LIGHTBURN_PALETTE,
   type LayerId,
   type LayerMode,
+  type Subject,
   isFillLayer,
   lightBurnIndex,
 } from '@/core/layers'
-import { GRATICULE_INTERVALS } from '@/core/settings'
+import { GRATICULE_INTERVALS, isStarDiameter, isStarHoleMagLimit } from '@/core/settings'
 import { Button } from '@/ui/components/ui/button'
 import { Label } from '@/ui/components/ui/label'
 import { Popover, PopoverContent, PopoverTrigger } from '@/ui/components/ui/popover'
@@ -20,28 +21,95 @@ import {
 } from '@/ui/components/ui/select'
 import { Slider } from '@/ui/components/ui/slider'
 import { Switch } from '@/ui/components/ui/switch'
+import { NumberField } from '@/ui/layout/fields'
 import { useAppStore } from '@/ui/store'
 
-/** Row order follows plan §6.4; the sanding guide (plan §14) only shows in bevel mode. */
-const ROWS: readonly LayerId[] = [
-  'cut',
-  'guide',
-  'coastlines',
-  'borders',
-  'rivers',
-  'lakes',
-  'land',
-  'ocean',
-  'graticule',
-]
+/**
+ * Row order follows plan §6.4 for the Earth and §15.2 for the sky; the sanding guide (plan §14)
+ * only shows in bevel mode.
+ */
+const ROWS: Readonly<Record<Subject, readonly LayerId[]>> = {
+  earth: ['cut', 'guide', 'coastlines', 'borders', 'rivers', 'lakes', 'land', 'ocean', 'graticule'],
+  sky: ['cut', 'guide', 'starHoles', 'stars', 'constellations', 'milkyWay', 'ecliptic', 'skyGrid'],
+}
 
-const MODES: readonly { value: LayerMode; label: string }[] = [
-  { value: 'fill', label: 'Fill' },
-  { value: 'stroke', label: 'Shore line' },
-  { value: 'both', label: 'Fill + line' },
-]
+/** Fill-layer modes, named for what each layer strokes. */
+const MODE_LABELS: Partial<Record<LayerId, Readonly<Record<LayerMode, string>>>> = {
+  stars: { fill: 'Dots', stroke: 'Rings', both: 'Dots + rings' },
+  milkyWay: { fill: 'Fill', stroke: 'Outline', both: 'Fill + outline' },
+}
+const DEFAULT_MODE_LABELS: Readonly<Record<LayerMode, string>> = {
+  fill: 'Fill',
+  stroke: 'Shore line',
+  both: 'Fill + line',
+}
+const MODES: readonly LayerMode[] = ['fill', 'stroke', 'both']
 
-const isMode = (v: string): v is LayerMode => MODES.some((m) => m.value === v)
+const isMode = (v: string): v is LayerMode => (MODES as readonly string[]).includes(v)
+
+/** Interval picker for a grid layer; the sky grid also shows right ascension in hours. */
+function GridInterval({
+  value,
+  onChange,
+  hours = false,
+}: {
+  value: number
+  onChange: (deg: number) => void
+  hours?: boolean
+}) {
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <Label className="text-xs">Interval</Label>
+      <Select value={String(value)} onValueChange={(v) => onChange(Number(v))}>
+        <SelectTrigger size="sm" className="w-24">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {GRATICULE_INTERVALS.map((d) => (
+            <SelectItem key={d} value={String(d)}>
+              {d}°{hours && d % 15 === 0 ? ` (${d / 15} h)` : ''}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  )
+}
+
+/** Which stars are cut through, and the smallest hole (plan §15.2). */
+function HoleSettings() {
+  const holeMag = useAppStore((s) => s.starHoleMagLimit)
+  const setHoleMag = useAppStore((s) => s.setStarHoleMagLimit)
+  const holeMin = useAppStore((s) => s.starHoleMinDiameterMm)
+  const setDiameters = useAppStore((s) => s.setStarDiametersMm)
+  return (
+    <div className="space-y-2">
+      <NumberField
+        id="hole-mag"
+        label="Cut stars to mag"
+        unit=""
+        value={holeMag}
+        onCommit={setHoleMag}
+        step={0.5}
+        min={-2}
+        accept={isStarHoleMagLimit}
+      />
+      <NumberField
+        id="hole-min"
+        label="Smallest hole"
+        unit="mm"
+        value={holeMin}
+        onCommit={(holeMin) => setDiameters({ holeMin })}
+        step={0.1}
+        accept={isStarDiameter}
+      />
+      <p className="text-[11px] text-muted-foreground">
+        Stars this bright or brighter are cut through for a lamp; fainter ones are engraved. Holes
+        on an edge notch both panels. Cut this layer before the outline.
+      </p>
+    </div>
+  )
+}
 
 /** LightBurn palette swatches plus per-layer preview settings (plan §3 UI components). */
 function LayerSettings({ id }: { id: LayerId }) {
@@ -49,6 +117,8 @@ function LayerSettings({ id }: { id: LayerId }) {
   const setLayerStyle = useAppStore((s) => s.setLayerStyle)
   const graticuleDeg = useAppStore((s) => s.graticuleIntervalDeg)
   const setGraticuleDeg = useAppStore((s) => s.setGraticuleIntervalDeg)
+  const skyGridDeg = useAppStore((s) => s.skyGridIntervalDeg)
+  const setSkyGridDeg = useAppStore((s) => s.setSkyGridIntervalDeg)
   const index = lightBurnIndex(style.color)
 
   return (
@@ -94,7 +164,7 @@ function LayerSettings({ id }: { id: LayerId }) {
             {index ? `layer ${index}` : 'not a palette colour'}.
           </p>
         </div>
-        {id !== 'cut' && id !== 'guide' && (
+        {id !== 'cut' && id !== 'guide' && id !== 'starHoles' && (
           <div className="space-y-2">
             <Label className="text-xs">Preview line width ({style.previewWidth.toFixed(1)}×)</Label>
             <Slider
@@ -107,23 +177,9 @@ function LayerSettings({ id }: { id: LayerId }) {
             <p className="text-[11px] text-muted-foreground">On-screen only; exports use 0.1 mm.</p>
           </div>
         )}
-        {id === 'graticule' && (
-          <div className="flex items-center justify-between gap-2">
-            <Label className="text-xs">Interval</Label>
-            <Select value={String(graticuleDeg)} onValueChange={(v) => setGraticuleDeg(Number(v))}>
-              <SelectTrigger size="sm" className="w-24">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {GRATICULE_INTERVALS.map((d) => (
-                  <SelectItem key={d} value={String(d)}>
-                    {d}°
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        )}
+        {id === 'graticule' && <GridInterval value={graticuleDeg} onChange={setGraticuleDeg} />}
+        {id === 'skyGrid' && <GridInterval value={skyGridDeg} onChange={setSkyGridDeg} hours />}
+        {id === 'starHoles' && <HoleSettings />}
       </PopoverContent>
     </Popover>
   )
@@ -156,8 +212,8 @@ function LayerRow({ id }: { id: LayerId }) {
           </SelectTrigger>
           <SelectContent>
             {MODES.map((m) => (
-              <SelectItem key={m.value} value={m.value}>
-                {m.label}
+              <SelectItem key={m} value={m}>
+                {(MODE_LABELS[id] ?? DEFAULT_MODE_LABELS)[m]}
               </SelectItem>
             ))}
           </SelectContent>
@@ -171,15 +227,20 @@ function LayerRow({ id }: { id: LayerId }) {
 /** Layer table (plan §6.4): enable, mode, LightBurn colour, preview width. */
 export function LayerTable() {
   const bevel = useAppStore((s) => s.joint === 'bevel')
+  const subject = useAppStore((s) => s.subject)
   return (
     <>
       <ul className="space-y-1">
-        {ROWS.filter((id) => bevel || id !== 'guide').map((id) => (
-          <LayerRow key={id} id={id} />
-        ))}
+        {ROWS[subject]
+          .filter((id) => bevel || id !== 'guide')
+          .map((id) => (
+            <LayerRow key={id} id={id} />
+          ))}
       </ul>
       <p className="text-xs text-muted-foreground">
-        Fills: shore lines follow coasts and lake edges, never the panel edges.
+        {subject === 'earth'
+          ? 'Fills: shore lines follow coasts and lake edges, never the panel edges.'
+          : 'Stars are sized by brightness. Star holes and the Milky Way are off by default.'}
       </p>
     </>
   )

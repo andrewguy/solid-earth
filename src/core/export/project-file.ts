@@ -4,6 +4,7 @@ import {
   type LayerId,
   type LayerMode,
   type LayerStyle,
+  SUBJECTS,
 } from '../layers'
 import {
   CUSTOM_SHEET,
@@ -29,6 +30,9 @@ import {
   RESOLUTIONS,
   type Resolution,
   isBevelAllowance,
+  isStarDiameter,
+  isStarHoleMagLimit,
+  isStarMagLimit,
 } from '../settings'
 import type { Vec3 } from '../vec3'
 
@@ -296,6 +300,18 @@ export function parseProject(text: string): ParsedProject {
     fingerTip: choice('fingerTip', FINGER_TIPS, d.fingerTip),
     fingerClearanceMm: num('fingerClearanceMm', (n) => n > -1 && n < 1, d.fingerClearanceMm),
     bevelAllowanceMm: num('bevelAllowanceMm', isBevelAllowance, d.bevelAllowanceMm),
+    subject: choice('subject', SUBJECTS, d.subject),
+    skyFlip: typeof raw.skyFlip === 'boolean' ? raw.skyFlip : d.skyFlip,
+    starMagLimit: num('starMagLimit', isStarMagLimit, d.starMagLimit),
+    starMinDiameterMm: num('starMinDiameterMm', isStarDiameter, d.starMinDiameterMm),
+    starMaxDiameterMm: num('starMaxDiameterMm', isStarDiameter, d.starMaxDiameterMm),
+    starHoleMagLimit: num('starHoleMagLimit', isStarHoleMagLimit, d.starHoleMagLimit),
+    starHoleMinDiameterMm: num('starHoleMinDiameterMm', isStarDiameter, d.starHoleMinDiameterMm),
+    skyGridIntervalDeg: num(
+      'skyGridIntervalDeg',
+      (n) => (GRATICULE_INTERVALS as readonly number[]).includes(n),
+      d.skyGridIntervalDeg,
+    ),
     nest: parseNest(raw.nest, notes),
     nestLayout: parseLayout(raw.nestLayout, def.faces.length, notes),
   }
