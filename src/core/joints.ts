@@ -10,13 +10,27 @@ import { type Vec2, type Vec3, add, cross, distance, dot, normalize, scale, sub 
  * (negative = beyond it); depth is measured from the outer surface into the material.
  */
 
-export type FingerTip = 'fill' | 'flush'
+export type FingerTip = 'fill' | 'flush' | 'partial'
+
+/** Partial tips when no length is given: halfway between flush and fill. */
+export const DEFAULT_FINGER_FILL = 0.5
+
+/**
+ * Where a finger tip sits between flush (0) and fill (1). `fill` is used only by partial tips.
+ */
+export function tipFraction(tip: FingerTip, fill = DEFAULT_FINGER_FILL): number {
+  if (tip === 'fill') return 1
+  if (tip === 'flush') return 0
+  return Math.min(1, Math.max(0, fill))
+}
 
 /** User-facing finger settings, in mm. */
 export interface FingerOptions {
   /** Width of every finger and slot along the edge. */
   readonly widthMm: number
   readonly tip: FingerTip
+  /** Partial tips only: finger length from flush (0) to fill (1). */
+  readonly fill?: number
   /** Per side, along the edge and in notch depth. Negative for a press fit. */
   readonly clearanceMm: number
 }
@@ -43,7 +57,8 @@ export interface FingerParams {
   readonly width: number
   readonly clearance: number
   readonly margin: number
-  readonly tip: FingerTip
+  /** Tip position from flush (0) to fill (1); see tipFraction. */
+  readonly tip: number
 }
 
 export function fingerParams(
@@ -56,7 +71,7 @@ export function fingerParams(
     width: options.widthMm / mmPerUnit,
     clearance: options.clearanceMm / mmPerUnit,
     margin: CORNER_MARGIN_MM / mmPerUnit,
-    tip: options.tip,
+    tip: tipFraction(options.tip, options.fill),
   }
 }
 
@@ -100,30 +115,36 @@ function notchDepth(c: number, s: number, t: number, tip: number): number {
  *   the neighbour's outer plane, so the outer surface is closed once the protruding tips are
  *   sanded flush.
  * - Flush: nothing crosses the neighbour's outer plane; small wedge gaps open at the surface.
+ * - Anything in between (`tip` as a number, 0 = flush … 1 = fill): the tip position is
+ *   interpolated linearly, so fingers stick out less and the wedge gaps are smaller.
  *
- * At 90° both are an ordinary box joint (tip 0, notch t).
+ * At 90° all are an ordinary box joint (tip 0, notch t).
  */
 export function fingerProfile(
   dihedral: number,
   thickness: number,
-  tip: FingerTip,
+  tip: FingerTip | number,
   clearance: number,
 ): FingerProfile {
   const t = thickness
   const c = Math.cos(dihedral)
   const s = Math.sin(dihedral)
   const cot = c / s
-  const tipPos = tip === 'fill' ? Math.min(0, t * cot) : Math.max(0, t * cot)
+  const f = typeof tip === 'number' ? tip : tipFraction(tip)
+  const flushTip = Math.max(0, t * cot)
+  // One of the two ends is 0, so f = 0 and f = 1 reproduce flush and fill exactly.
+  const tipPos = flushTip + f * (Math.min(0, t * cot) - flushTip)
   const notch = notchDepth(c, s, t, tipPos) + clearance
   const butt = edgeInset(dihedral, t)
-  // The slabs overlap over positions min(0, t·cot θ) … t/sin θ (obtuse) or t·(1 + cos θ)/sin θ.
-  const overlapMax = c < 0 ? t / s : (t * (1 + c)) / s
+  // The zone covers only where this panel's outline departs from the butt cut. The neighbour's
+  // material is covered by its own profile: cornerClearance tests both panels in their own frames.
+  // (In fill mode this equals the slab-overlap band; flush mode needs much less at obtuse edges.)
   return {
     butt,
     tip: tipPos,
     notch,
-    zoneMin: Math.min(0, t * cot),
-    zoneMax: Math.max(overlapMax, notch, butt),
+    zoneMin: Math.min(0, tipPos),
+    zoneMax: Math.max(notch, butt),
   }
 }
 

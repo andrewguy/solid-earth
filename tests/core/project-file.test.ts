@@ -29,7 +29,8 @@ const custom: ProjectSettings = {
   kerfMm: 0.2,
   joint: 'finger',
   fingerWidthMm: 12.5,
-  fingerTip: 'flush',
+  fingerTip: 'partial',
+  fingerFill: 0.35,
   fingerClearanceMm: -0.05,
 }
 
@@ -81,6 +82,7 @@ describe('project files', () => {
         kerfMm: 'wide',
         joint: 'dovetail',
         fingerTip: 'pointy',
+        fingerFill: 1.5,
         fingerWidthMm: 0,
         fingerClearanceMm: 3,
         layerStyles: {
@@ -96,6 +98,7 @@ describe('project files', () => {
     expect(settings.kerfMm).toBe(DEFAULT_SETTINGS.kerfMm)
     expect(settings.joint).toBe('butt')
     expect(settings.fingerTip).toBe(DEFAULT_SETTINGS.fingerTip)
+    expect(settings.fingerFill).toBe(DEFAULT_SETTINGS.fingerFill)
     expect(settings.fingerWidthMm).toBe(DEFAULT_SETTINGS.fingerWidthMm)
     expect(settings.fingerClearanceMm).toBe(DEFAULT_SETTINGS.fingerClearanceMm)
     expect(notes.join(' ')).toMatch(/dovetail/)

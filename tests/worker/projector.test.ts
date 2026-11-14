@@ -246,6 +246,7 @@ describe('ZIP export', () => {
     joint: 'butt',
     fingerWidthMm: 10,
     fingerTip: 'fill',
+    fingerFill: 0.5,
     fingerClearanceMm: 0.1,
     bevelAllowanceMm: 0.5,
     subject: 'earth',

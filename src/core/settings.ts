@@ -1,4 +1,4 @@
-import type { FingerTip, JointOptions } from './joints'
+import { DEFAULT_FINGER_FILL, type FingerTip, type JointOptions } from './joints'
 import { DEFAULT_LAYER_STYLES, type LayerId, type LayerStyle, type Subject } from './layers'
 import { DEFAULT_NEST_SETTINGS, type NestLayout, type NestSettings } from './nest/types'
 import { preset } from './polyhedron/presets'
@@ -35,6 +35,8 @@ export interface ProjectSettings {
   readonly joint: JointKind
   readonly fingerWidthMm: number
   readonly fingerTip: FingerTip
+  /** Partial tips: finger length from flush (0) to fill (1). */
+  readonly fingerFill: number
   /** Per side; negative for a press fit. */
   readonly fingerClearanceMm: number
   /** Bevel mode: how far the cut line sits outside the engraved sanding guide (plan §14). */
@@ -66,13 +68,19 @@ export interface ProjectSettings {
 
 export const JOINT_KINDS = ['butt', 'finger', 'bevel'] as const
 export type JointKind = (typeof JOINT_KINDS)[number]
-export const FINGER_TIPS: readonly FingerTip[] = ['fill', 'flush']
+export const FINGER_TIPS: readonly FingerTip[] = ['fill', 'flush', 'partial']
+export const isFingerFill = (f: number) => f >= 0 && f <= 1
 
 /** The joint options the pipeline needs, from the project settings. */
 export function jointOptions(
   s: Pick<
     ProjectSettings,
-    'joint' | 'fingerWidthMm' | 'fingerTip' | 'fingerClearanceMm' | 'bevelAllowanceMm'
+    | 'joint'
+    | 'fingerWidthMm'
+    | 'fingerTip'
+    | 'fingerFill'
+    | 'fingerClearanceMm'
+    | 'bevelAllowanceMm'
   >,
 ): JointOptions {
   switch (s.joint) {
@@ -81,6 +89,7 @@ export function jointOptions(
         kind: 'finger',
         widthMm: s.fingerWidthMm,
         tip: s.fingerTip,
+        fill: s.fingerFill,
         clearanceMm: s.fingerClearanceMm,
       }
     case 'bevel':
@@ -124,6 +133,7 @@ export const DEFAULT_SETTINGS: ProjectSettings = {
   joint: 'butt',
   fingerWidthMm: 10,
   fingerTip: 'fill',
+  fingerFill: DEFAULT_FINGER_FILL,
   fingerClearanceMm: 0.1,
   bevelAllowanceMm: 2,
   subject: 'earth',

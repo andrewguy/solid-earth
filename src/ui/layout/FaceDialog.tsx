@@ -30,6 +30,7 @@ export function FaceDialog() {
   const bevel = useAppStore((s) => s.joint === 'bevel')
   const fingerWidthMm = useAppStore((s) => s.fingerWidthMm)
   const fingerTip = useAppStore((s) => s.fingerTip)
+  const fingerFill = useAppStore((s) => s.fingerFill)
   const fingerClearanceMm = useAppStore((s) => s.fingerClearanceMm)
   const frames = useMemo(() => buildFrames(def), [def])
   const mmPerUnit = edgeLengthMm / longestEdge(frames)
@@ -52,12 +53,22 @@ export function FaceDialog() {
   const fingerCounts = useMemo(() => {
     if (index === null || !finger) return null
     const p = fingerParams(
-      { widthMm: fingerWidthMm, tip: fingerTip, clearanceMm: fingerClearanceMm },
+      { widthMm: fingerWidthMm, tip: fingerTip, fill: fingerFill, clearanceMm: fingerClearanceMm },
       thicknessMm,
       mmPerUnit,
     )
     return faceFingers(frames, index, p).map((l) => l.count)
-  }, [frames, index, finger, fingerWidthMm, fingerTip, fingerClearanceMm, thicknessMm, mmPerUnit])
+  }, [
+    frames,
+    index,
+    finger,
+    fingerWidthMm,
+    fingerTip,
+    fingerFill,
+    fingerClearanceMm,
+    thicknessMm,
+    mmPerUnit,
+  ])
   const face = index === null ? undefined : projection?.faces[index]
   const filename = index === null ? '' : faceFileName(projection?.shape ?? 'shape', index)
 

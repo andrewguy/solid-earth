@@ -31,6 +31,7 @@ export function useProjectionSync(): void {
   const jointKind = useAppStore((s) => s.joint)
   const fingerWidthMm = useAppStore((s) => s.fingerWidthMm)
   const fingerTip = useAppStore((s) => s.fingerTip)
+  const fingerFill = useAppStore((s) => s.fingerFill)
   const fingerClearanceMm = useAppStore((s) => s.fingerClearanceMm)
   const bevelAllowanceMm = useAppStore((s) => s.bevelAllowanceMm)
   const subject = useAppStore((s) => s.subject)
@@ -65,6 +66,7 @@ export function useProjectionSync(): void {
       joint: jointKind,
       fingerWidthMm,
       fingerTip,
+      fingerFill,
       fingerClearanceMm,
       bevelAllowanceMm,
     })
@@ -132,6 +134,7 @@ export function useProjectionSync(): void {
     jointKind,
     fingerWidthMm,
     fingerTip,
+    fingerFill,
     fingerClearanceMm,
     bevelAllowanceMm,
     subject,

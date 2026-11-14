@@ -5,7 +5,7 @@ import { toast } from 'sonner'
 import { MOON_RADIUS_KM } from '@/core/geo/moon'
 import { rotationReadout } from '@/core/geo/rotation'
 import { SUBJECTS, type Subject } from '@/core/layers'
-import { type FingerTip, fingerProfile } from '@/core/joints'
+import { type FingerTip, fingerProfile, tipFraction } from '@/core/joints'
 import { bevelTiltDeg, dihedralGroups } from '@/core/panel'
 import { buildFrames } from '@/core/polyhedron/faces'
 import { importPolyhedron } from '@/core/polyhedron/import'
@@ -83,7 +83,7 @@ function PanelInfo() {
   const thicknessMm = useAppStore((s) => s.thicknessMm)
   const finger = useAppStore((s) => s.joint === 'finger')
   const bevel = useAppStore((s) => s.joint === 'bevel')
-  const fingerTip = useAppStore((s) => s.fingerTip)
+  const tip = useAppStore((s) => tipFraction(s.fingerTip, s.fingerFill))
   const clearanceMm = useAppStore((s) => s.fingerClearanceMm)
   const groups = useMemo(() => dihedralGroups(buildFrames(def), thicknessMm), [def, thicknessMm])
   const mm = (x: number) => `${x.toFixed(2)} mm`
@@ -111,7 +111,7 @@ function PanelInfo() {
         <tbody className="font-mono">
           {groups.map((g) => {
             const prof = finger
-              ? fingerProfile(g.dihedralDeg * DEG_TO_RAD, thicknessMm, fingerTip, clearanceMm)
+              ? fingerProfile(g.dihedralDeg * DEG_TO_RAD, thicknessMm, tip, clearanceMm)
               : null
             return (
               <tr key={g.dihedralDeg.toFixed(2)}>
@@ -173,6 +173,8 @@ function JointSettings() {
   const setFingerWidthMm = useAppStore((s) => s.setFingerWidthMm)
   const fingerTip = useAppStore((s) => s.fingerTip)
   const setFingerTip = useAppStore((s) => s.setFingerTip)
+  const fingerFill = useAppStore((s) => s.fingerFill)
+  const setFingerFill = useAppStore((s) => s.setFingerFill)
   const fingerClearanceMm = useAppStore((s) => s.fingerClearanceMm)
   const setFingerClearanceMm = useAppStore((s) => s.setFingerClearanceMm)
   const bevelAllowanceMm = useAppStore((s) => s.bevelAllowanceMm)
@@ -249,13 +251,36 @@ function JointSettings() {
               <SelectContent>
                 <SelectItem value="fill">Fill joint</SelectItem>
                 <SelectItem value="flush">Flush</SelectItem>
+                <SelectItem value="partial">Custom length</SelectItem>
               </SelectContent>
             </Select>
           </div>
+          {fingerTip === 'partial' && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <Label htmlFor="finger-fill">Finger length</Label>
+                <span className="font-mono text-xs">{Math.round(fingerFill * 100)}% of fill</span>
+              </div>
+              <Slider
+                id="finger-fill"
+                min={0}
+                max={1}
+                step={0.05}
+                value={[fingerFill]}
+                onValueChange={([v]) => v !== undefined && setFingerFill(Math.round(v * 20) / 20)}
+              />
+              <div className="flex justify-between text-xs text-muted-foreground">
+                <span>Flush</span>
+                <span>Fill</span>
+              </div>
+            </div>
+          )}
           <p className="text-xs text-muted-foreground">
             {fingerTip === 'fill'
               ? 'Fingers fill the joint and stick out slightly past the neighbouring panel: sand them flush for a closed outer surface.'
-              : 'Nothing sticks out; small wedge-shaped gaps open at the outer surface beside each finger.'}{' '}
+              : fingerTip === 'flush'
+                ? 'Nothing sticks out; small wedge-shaped gaps open at the outer surface beside each finger.'
+                : 'Between the two: fingers stick out less than a filled joint and leave smaller gaps than flush ones. Shorter fingers also need less room at the corners, so more fit on each edge.'}{' '}
             Clearance narrows fingers and widens slots; use a negative value for a press fit. Edges
             too short for two fingers stay butt joints.
           </p>

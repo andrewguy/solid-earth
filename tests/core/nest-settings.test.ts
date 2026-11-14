@@ -80,6 +80,11 @@ describe('nestInputKey', () => {
     ['joint', base, finger],
     ['finger width', finger, { ...finger, fingerWidthMm: 12 }],
     ['finger tip', finger, { ...finger, fingerTip: 'flush' }],
+    [
+      'partial finger length',
+      { ...finger, fingerTip: 'partial' },
+      { ...finger, fingerTip: 'partial', fingerFill: 0.8 },
+    ],
     ['finger clearance', finger, { ...finger, fingerClearanceMm: 0 }],
     ['joint (bevel)', base, bevel],
     ['bevel vs finger', finger, bevel],
@@ -102,6 +107,7 @@ describe('nestInputKey', () => {
   it.each<[string, ProjectSettings, ProjectSettings]>([
     ['kerf amount while kerf is off', base, { ...base, kerfMm: 0.3 }],
     ['finger settings with butt joints', base, { ...base, fingerWidthMm: 20, fingerTip: 'flush' }],
+    ['finger length unless partial', finger, { ...finger, fingerFill: 0.8 }],
     ['bevel allowance with butt joints', base, { ...base, bevelAllowanceMm: 1 }],
     ['finger settings with bevels', bevel, { ...bevel, fingerWidthMm: 20 }],
     ['resolution', base, { ...base, resolution: '110m' }],

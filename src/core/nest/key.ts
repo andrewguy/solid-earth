@@ -30,7 +30,13 @@ export function nestInputKey(s: ProjectSettings): string {
   const n = s.nest
   const joint =
     s.joint === 'finger'
-      ? ['finger', s.fingerWidthMm, s.fingerTip, s.fingerClearanceMm]
+      ? [
+          'finger',
+          s.fingerWidthMm,
+          s.fingerTip,
+          ...(s.fingerTip === 'partial' ? [s.fingerFill] : []),
+          s.fingerClearanceMm,
+        ]
       : s.joint === 'bevel'
         ? ['bevel', s.bevelAllowanceMm]
         : ['butt']

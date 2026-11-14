@@ -79,6 +79,7 @@ function fromSettings(s: ProjectSettings) {
     joint: s.joint,
     fingerWidthMm: s.fingerWidthMm,
     fingerTip: s.fingerTip,
+    fingerFill: s.fingerFill,
     fingerClearanceMm: s.fingerClearanceMm,
     bevelAllowanceMm: s.bevelAllowanceMm,
     subject: s.subject,
@@ -112,6 +113,7 @@ interface AppState {
   joint: JointKind
   fingerWidthMm: number
   fingerTip: FingerTip
+  fingerFill: number
   fingerClearanceMm: number
   bevelAllowanceMm: number
   subject: Subject
@@ -168,6 +170,7 @@ interface AppState {
   setJoint: (joint: JointKind) => void
   setFingerWidthMm: (mm: number) => void
   setFingerTip: (tip: FingerTip) => void
+  setFingerFill: (fill: number) => void
   setFingerClearanceMm: (mm: number) => void
   setBevelAllowanceMm: (mm: number) => void
   setSubject: (subject: Subject) => void
@@ -254,6 +257,9 @@ export const useAppStore = create<AppState>()((set, get) => ({
     if (Number.isFinite(mm) && mm > 0) set({ fingerWidthMm: mm })
   },
   setFingerTip: (fingerTip) => set({ fingerTip }),
+  setFingerFill: (fill) => {
+    if (Number.isFinite(fill) && fill >= 0 && fill <= 1) set({ fingerFill: fill })
+  },
   setFingerClearanceMm: (mm) => {
     if (Number.isFinite(mm) && mm > -1 && mm < 1) set({ fingerClearanceMm: mm })
   },
@@ -314,6 +320,7 @@ export const selectSettings = (s: AppState): ProjectSettings => ({
   joint: s.joint,
   fingerWidthMm: s.fingerWidthMm,
   fingerTip: s.fingerTip,
+  fingerFill: s.fingerFill,
   fingerClearanceMm: s.fingerClearanceMm,
   bevelAllowanceMm: s.bevelAllowanceMm,
   subject: s.subject,

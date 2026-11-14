@@ -4,12 +4,15 @@ import { describe, expect, it } from 'vitest'
 import { prepareLines } from '@/core/geo/lines'
 import { graticuleLines } from '@/core/geo/topojson'
 import {
+  DEFAULT_FINGER_FILL,
   type FingerParams,
+  type FingerProfile,
   type FingerTip,
   faceFingers,
   fingerParams,
   fingerProfile,
   fingeredOutline,
+  tipFraction,
 } from '@/core/joints'
 import { ringArea } from '@/core/planar/clipper'
 import { buildAllFaces, longestEdge, prepareMap } from '@/core/pipeline'
@@ -60,11 +63,13 @@ function crossSection(theta: number, t: number, tip: number, notch: number) {
 }
 
 const tips: FingerTip[] = ['fill', 'flush']
+/** Every tip setting: the two named modes and partial lengths in between. */
+const tipSettings: (FingerTip | number)[] = [...tips, 0.25, 0.5, 0.75]
 
 describe('finger cross-section', () => {
   const dihedral = fc.double({ min: 20 * DEG, max: 165 * DEG, noNaN: true })
 
-  it.each(tips)(
+  it.each(tipSettings)(
     '%s: finger and notch never overlap, and the notch is as shallow as possible',
     (tip) => {
       fc.assert(
@@ -132,8 +137,42 @@ describe('finger cross-section', () => {
     )
   })
 
+  it('partial tips: 0 and 1 are exactly flush and fill', () => {
+    fc.assert(
+      fc.property(dihedral, (theta) => {
+        const same = (a: FingerProfile, b: FingerProfile) =>
+          a.tip === b.tip &&
+          a.notch === b.notch &&
+          a.zoneMin === b.zoneMin &&
+          a.zoneMax === b.zoneMax
+        return (
+          same(fingerProfile(theta, 3, 0, 0.1), fingerProfile(theta, 3, 'flush', 0.1)) &&
+          same(fingerProfile(theta, 3, 1, 0.1), fingerProfile(theta, 3, 'fill', 0.1))
+        )
+      }),
+    )
+  })
+
+  it('partial tips: longer fingers reach further out and need deeper notches', () => {
+    fc.assert(
+      fc.property(dihedral, fc.double({ min: 0, max: 0.9, noNaN: true }), (theta, f) => {
+        const a = fingerProfile(theta, 1, f, 0)
+        const b = fingerProfile(theta, 1, f + 0.1, 0)
+        return b.tip <= a.tip + 1e-12 && b.notch >= a.notch - 1e-12
+      }),
+    )
+  })
+
+  it('tipFraction maps the modes and clamps partial lengths', () => {
+    expect(tipFraction('fill', 0.3)).toBe(1)
+    expect(tipFraction('flush', 0.3)).toBe(0)
+    expect(tipFraction('partial', 0.3)).toBe(0.3)
+    expect(tipFraction('partial')).toBe(DEFAULT_FINGER_FILL)
+    expect(tipFraction('partial', 2)).toBe(1)
+  })
+
   it('is an ordinary box joint at 90°', () => {
-    for (const tip of tips) {
+    for (const tip of tipSettings) {
       const prof = fingerProfile(90 * DEG, 3, tip, 0)
       expect(prof.tip).toBeCloseTo(0, 12)
       expect(prof.notch).toBeCloseTo(3, 12)
@@ -170,7 +209,7 @@ function toPlane(frames: PolyhedronFrames, f: number, p: Vec3): { xy: Vec2; dept
   return { xy: [dot(r, face.u), dot(r, face.v)], depth: -dot(r, face.normal) }
 }
 
-const CASES: { id: PresetId; tip: FingerTip; clearanceMm: number }[] = [
+const CASES: { id: PresetId; tip: FingerTip; clearanceMm: number; fill?: number }[] = [
   { id: 'cube', tip: 'fill', clearanceMm: 0 },
   { id: 'tetrahedron', tip: 'fill', clearanceMm: 0.1 },
   { id: 'tetrahedron', tip: 'flush', clearanceMm: 0 },
@@ -179,12 +218,22 @@ const CASES: { id: PresetId; tip: FingerTip; clearanceMm: number }[] = [
   { id: 'truncated-icosahedron', tip: 'fill', clearanceMm: 0.1 },
   { id: 'rhombic-triacontahedron', tip: 'flush', clearanceMm: 0 },
   { id: 'snub-cube', tip: 'fill', clearanceMm: 0.1 },
+  // Large, obtuse shapes in flush mode, whose corner clearances are much smaller than fill's.
+  { id: 'snub-dodecahedron', tip: 'flush', clearanceMm: 0 },
+  { id: 'tetrakis-hexahedron', tip: 'flush', clearanceMm: 0.1 },
+  { id: 'disdyakis-triacontahedron', tip: 'flush', clearanceMm: 0 },
+  { id: 'pentagonal-hexecontahedron', tip: 'flush', clearanceMm: 0.1 },
+  // Partial tips.
+  { id: 'tetrahedron', tip: 'partial', clearanceMm: 0, fill: 0.5 },
+  { id: 'icosahedron', tip: 'partial', clearanceMm: 0.1, fill: 0.3 },
+  { id: 'snub-dodecahedron', tip: 'partial', clearanceMm: 0, fill: 0.5 },
+  { id: 'disdyakis-triacontahedron', tip: 'partial', clearanceMm: 0.1, fill: 0.7 },
 ]
 
-function setup(id: PresetId, tip: FingerTip, clearanceMm: number, widthMm = 10) {
+function setup(id: PresetId, tip: FingerTip, clearanceMm: number, widthMm = 10, fill?: number) {
   const frames = buildFrames(preset(id))
   const mmPerUnit = 100 / longestEdge(frames)
-  const p = fingerParams({ widthMm, tip, clearanceMm }, 3, mmPerUnit)
+  const p = fingerParams({ widthMm, tip, fill, clearanceMm }, 3, mmPerUnit)
   const outlines = frames.faces.map((f) => fingeredOutline(frames, f.index, p))
   return { frames, mmPerUnit, p, outlines }
 }
@@ -240,11 +289,11 @@ function fingerSamples(
 describe('fingered panels', () => {
   it.each(CASES)(
     '$id ($tip, clearance $clearanceMm mm): no finger enters any other panel',
-    ({ id, tip, clearanceMm }) => {
-      checkNoCollisions(setup(id, tip, clearanceMm))
+    ({ id, tip, clearanceMm, fill }) => {
+      checkNoCollisions(setup(id, tip, clearanceMm, 10, fill))
       // Narrow fingers leave little leftover length, so the end fingers sit right at the corner
       // clearance; only those need checking again.
-      checkNoCollisions(setup(id, tip, clearanceMm, 2.3), true)
+      checkNoCollisions(setup(id, tip, clearanceMm, 2.3, fill), true)
     },
   )
 
@@ -275,8 +324,8 @@ describe('fingered panels', () => {
     expect(fingered).toBeGreaterThan(0)
   }
 
-  it.each(CASES)('$id ($tip): outlines are simple polygons', ({ id, tip, clearanceMm }) => {
-    const { outlines } = setup(id, tip, clearanceMm)
+  it.each(CASES)('$id ($tip): outlines are simple polygons', ({ id, tip, clearanceMm, fill }) => {
+    const { outlines } = setup(id, tip, clearanceMm, 10, fill)
     for (const outline of outlines) {
       // A self-intersecting outline would have non-adjacent edges crossing.
       const n = outline.length

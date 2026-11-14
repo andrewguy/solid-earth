@@ -39,7 +39,13 @@ describe('nestRequest', () => {
     const req = nestRequest(s)
     expect(req.kerfMm).toBe(0)
     expect(nestRequest({ ...s, kerfEnabled: true }).kerfMm).toBe(0.3)
-    expect(req.joint).toEqual({ kind: 'finger', widthMm: 10, tip: 'fill', clearanceMm: 0.1 })
+    expect(req.joint).toEqual({
+      kind: 'finger',
+      widthMm: 10,
+      tip: 'fill',
+      fill: 0.5,
+      clearanceMm: 0.1,
+    })
     expect(req.inputKey).toBe(nestInputKey(s))
   })
 })
